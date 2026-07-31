@@ -1,0 +1,380 @@
+.setu_py_editor_playground{
+    [aria-hidden="true"], [aria-hidden="1"] {
+      display: block !important;
+    }
+}
+.dn_toolbar{
+    position: absolute;
+    color: rgb(100,116,139);
+    z-index: 10;
+    width: 40px;
+    background: #fff;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 8px 0;
+    border: 1px solid #64748B;
+    right: 8px;
+    top: 8px;
+    border-radius: 4px;
+    i{
+        cursor: pointer;
+        font-size: 14px;
+    }
+    .fa-mobile{
+        font-size: 18px;
+    }
+//     &:after{
+//         content: '';
+//         position: absolute;
+//         height: 100%;
+//         width: 1px;
+//         background: #64748B;
+//         top: 0;
+//         left: 40px;
+//     }
+//     &:before{
+//         content: '';
+//         position: absolute;
+//         height: 100%;
+//         width: 1px;
+//         background: #64748B;
+//         top: 0;
+//         left: 80px;
+//     }
+    .fa-play{
+        color: #49A055 !important;
+    }
+}
+.CodeMirror{
+    font-size: 16px;
+    height: calc(100vh - 86px);
+}
+#output_ed{
+    tr{
+        text-align: left !important;
+    }
+}
+// .height_50{
+//     height: 50vh !important;
+// }
+// .height_100{
+//     height: 100vh !important;
+// }
+.rotate-90{
+    transform: rotate(90deg);
+}
+.r-vertical{
+     resize: vertical;
+     overflow: auto
+}
+.r-horizontal{
+     resize: horizontal;
+     overflow: auto
+}
+.copy-code::after {
+	font-family: "Font Awesome 5 Free";
+	font-weight: 600;
+	font-size: 16px;
+	content: "\f328";
+	color: #fff;
+	position: absolute;
+	top: 3px;
+	left: 10px;
+}
+.copy-code-wrap:active .fa-copy {
+	transform: translate(0, 0) scale(0.9);
+}
+.setu_toast{
+//     position: absolute;
+//     right: 12px;
+//     bottom: 10px;
+    .toast-body{
+        padding: 1px 18px !important;
+    }
+}
+
+
+
+
+
+
+
+
+#app {
+  width: 100%;
+  height: 100vh;
+
+  font-family: Arial, Helvetica, sans-serif;
+    .resizable-x,
+    .resizable-y {
+      display: flex;
+      overflow: hidden;
+    }
+
+    .resizable-x,.resizable-y {
+      height: 100%;
+    }
+
+    .resizable-y {
+      flex-direction: column;
+    }
+
+    .resizer-x,
+    .resizer-y {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: black;
+      padding: 4px;
+    }
+
+    .resizer-x {
+      z-index: 2;
+      cursor: col-resize;
+    }
+    .resizer-x::before,
+    .resizer-x::after {
+      content: "";
+      width: 2px;
+      height: 16px;
+      margin: 2px;
+      background: lightgray;
+    }
+
+    .resizer-y {
+      z-index: 1;
+      cursor: row-resize;
+      flex-direction: column;
+    }
+    .resizer-y::before,
+    .resizer-y::after {
+      content: "";
+      width: 16px;
+      height: 2px;
+      margin: 2px;
+      background: lightgray;
+    }
+
+    .div0,
+    .div1,
+    .div2 {
+      overflow: hidden;
+    }
+
+    .div0 {
+      background: #1d1e22;
+    }
+
+    .div1 {
+      background: #282a36;
+      overflow: scroll !important;
+      font-size: 14px;
+      color: #FFF;
+    }
+
+    .div2 {
+      background: #1d1e22;
+    }
+
+    .div0 p,
+    .div1 p,
+    .div2 p {
+      font-size: 2rem;
+      margin-left: 1em;
+      text-transform: uppercase;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
+      color: #FFF;
+    }
+}
+
+
+
+.powers {
+    background: #060606;
+    white-space: nowrap;
+    position: relative;
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -webkit-align-items: center;
+    -ms-flex-align: center;
+    align-items: center;
+    padding-right: .5rem;
+    .editor-actions-left {
+        -webkit-box-flex: 1;
+        -webkit-flex: 1 1 auto;
+        -ms-flex: 1 1 auto;
+        flex: 1 1 auto;
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: -ms-flexbox;
+        display: flex;
+    }
+    .box-title {
+        border-top: 3px solid #34363e;
+        white-space: nowrap;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0;
+        font-size: 1.1rem;
+        line-height: 1;
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-align: center;
+        -webkit-align-items: center;
+        -ms-flex-align: center;
+        align-items: center;
+        padding: 9px 12px;
+        background: #282a36;
+    }
+    .file-type-icon {
+      width: 17px;
+      height: 17px;
+      -webkit-margin-end: .4rem;
+      margin-inline-end: .4rem;
+    }
+    .box-title-preprocessor-name {
+      font-size: 80%;
+      margin-left: .2rem;
+      font-weight: 400;
+    }
+    .powers .editor-actions-right {
+        margin-left: auto;
+      display: -webkit-box;
+      display: -webkit-flex;
+      display: -ms-flexbox;
+      display: flex;
+    }
+    .mini-button {
+      font-size: .8rem;
+      padding: 2px 7px;
+      margin: 0 3px 0 0;
+      border-width: 1px;
+      border-radius: 2px;
+    }
+    .mini-button > i {
+      width: 10px;
+      height: 10px;
+      width: 12px;
+        height: 16px;
+        line-height: 16px;
+    }
+    .button{
+        background: #444857;
+        color: #fff;
+        -webkit-appearance: none;
+        border: 0;
+        display: inline-flex;
+        -webkit-box-align: center;
+        -webkit-align-items: center;
+        -ms-flex-align: center;
+        align-items: center;
+        vertical-align: middle;
+        position: relative;
+        font-family: inherit;
+        text-shadow: none;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-decoration: none !important;
+        font-weight: 400 !important;
+        &:hover{
+            background: #5a5f73;
+        }
+    }
+    .fa-mobile,.fa-angle-left{
+        font-size: 16px !important;
+    }
+}
+.box-title{
+    svg{
+        height: 28px;
+        width: 34px;
+    }
+    img{
+        height: 26px;
+        width: 26px;
+    }
+}
+
+
+@media only screen and (max-width: 600px) {
+    .box-title{
+        max-width: 150px;
+    }
+    .box-title-name {
+      white-space: nowrap;
+        width: 105px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+
+.loader_code {
+  color: #fff;
+  font-family: Consolas, Menlo, Monaco, monospace;
+  font-weight: bold;
+  font-size: 34px;
+  opacity: 0.8;
+    display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #282a36;
+  height: 100%;
+}
+.loader_code span {
+  display: inline-block;
+  -webkit-animation: pulse 0.4s alternate infinite ease-in-out;
+          animation: pulse 0.4s alternate infinite ease-in-out;
+}
+.loader_code span:nth-child(odd) {
+  -webkit-animation-delay: 0.4s;
+          animation-delay: 0.4s;
+}
+.loader_code_hide
+{
+    opacity: 0;
+    pointer-event: none;
+    height: 0;
+}
+@-webkit-keyframes pulse {
+  to {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+}
+@keyframes pulse {
+  to {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+}
+
+
+.CodeMirror-vscrollbar,.CodeMirror-scroll {
+//   margin-right: 10px;
+  &::-webkit-scrollbar {
+    width: 10px; /* 1px wider than Lion. */
+    /* This is more usable for users trying to click it. */
+    -webkit-border-radius: 0px;
+  }
+    &::-webkit-scrollbar-thumb {
+      background: #666b7a;
+    }
+
+  /* The scrollbar 'thumb' ...that marque oval shape in a scrollbar */
+  &::-webkit-scrollbar-thumb:vertical {
+    -webkit-border-radius: 100px;
+  }
+  &::-webkit-scrollbar-thumb:vertical:active {
+    -webkit-border-radius: 100px;
+  }
+}

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="setu_python_playground" model="ir.actions.client">
+            <field name="name">Python Playground</field>
+            <field name="tag">setu_python_playground</field>
+        </record>
+
+        <record id="view_execute_python_editor_code_tree" model="ir.ui.view">
+            <field name="name">view.execute.python.code.tree</field>
+            <field name="model">setu.python.editor</field>
+            <field name="type">list</field>
+            <field name="arch" type="xml">
+                <list string="Python Code" editable="bottom">
+                    <field name="name"/>
+                    <field name="editor_type"/>
+                    <button name="%(setu_python_playground)d" type="action" string="Open PlayGround" class="oe_highlight"/>
+                </list>
+            </field>
+        </record>
+
+
+        <record id="action_execute_python_code_from_editor" model="ir.actions.act_window">
+            <field name="name">Python Editor</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">setu.python.editor</field>
+            <field name="view_mode">list</field>
+            <field name="view_id" ref="view_execute_python_editor_code_tree"/>
+        </record>
+
+
+            <menuitem name="Helping Hand"
+              id="setu_python_editor_menu_root"
+              action="action_execute_python_code_from_editor"
+              web_icon="setu_python_editor,static/description/icon.png"
+              groups="setu_python_editor.group_developer_utility"/>
+
+    </data>
+</odoo>
