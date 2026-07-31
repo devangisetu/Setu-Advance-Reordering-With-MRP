@@ -51,6 +51,10 @@ class StockWarehouseOrderpoint(models.Model):
         compute="_compute_subcontracting_enabled",
         string="Subcontracting Enabled in Settings"
     )
+    scrap_enabled = fields.Boolean(
+        compute="_compute_scrap_enabled",
+        string="Scrap Enabled in Settings"
+    )
     product_production_history_ids = fields.One2many(
         "product.production.history", "orderpoint_id", string="Production History"
     )
@@ -62,6 +66,9 @@ class StockWarehouseOrderpoint(models.Model):
     )
     product_resupply_history_ids = fields.One2many(
         "product.resupply.history", "orderpoint_id", string="Resupply History"
+    )
+    product_scrap_history_ids = fields.One2many(
+        "product.scrap.history", "orderpoint_id", string="Scrap History"
     )
 
     consider_current_period_sales = fields.Boolean(
@@ -75,6 +82,12 @@ class StockWarehouseOrderpoint(models.Model):
         enabled = setting.subcontracting_enabled if setting else False
         for op in self:
             op.subcontracting_enabled = enabled
+
+    def _compute_scrap_enabled(self):
+        setting = self.env['advance.reordering.settings'].search([], limit=1)
+        enabled = setting.scrap_enabled if setting else False
+        for op in self:
+            op.scrap_enabled = enabled
 
     def write(self, vals):
         if 'wizard_add_mo_in_lead_calc' in self.env.context:
@@ -200,6 +213,27 @@ class StockWarehouseOrderpoint(models.Model):
         max_end = max(period_ids.mapped('fpenddate'))
         query = """
             SELECT update_product_consumption_history(%s, %s, %s, %s)
+        """
+        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        return True
+
+    def update_product_scrap_history(self):
+        products = self.mapped('product_id')
+        warehouses = self.mapped('warehouse_id')
+        if not products or not warehouses:
+            return True
+        today = date.today()
+        start_date_limit = today - relativedelta(days=365)
+        period_ids = self.env['reorder.fiscalperiod'].search([
+            ('fpstartdate', '>=', start_date_limit),
+            ('fpstartdate', '<=', today)
+        ])
+        if not period_ids:
+            return True
+        min_start = min(period_ids.mapped('fpstartdate'))
+        max_end = max(period_ids.mapped('fpenddate'))
+        query = """
+            SELECT update_product_scrap_history(%s, %s, %s, %s)
         """
         self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
         return True
@@ -357,6 +391,8 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_iwt_history()
             self.update_product_production_history()
             self.update_product_subcontract_history()
+            if self.scrap_enabled:
+                self.update_product_scrap_history()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
         self.onchange_average_sale_calculation_base()

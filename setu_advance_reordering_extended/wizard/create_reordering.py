@@ -19,6 +19,8 @@ class CreateReordering(models.TransientModel):
                 ('resupply_history', 'Resupply History'),
                 ('subcontract_history', 'Subcontracting Orders'),
             ])
+        if setting and setting.scrap_enabled:
+            options.append(('scrap_history', 'Scrap History'))
         return options
 
     operation = fields.Selection(
@@ -67,6 +69,15 @@ class CreateReordering(models.TransientModel):
     subcontracting_enabled = fields.Boolean(
         default=_default_subcontracting_enabled,
         string="Subcontracting Enabled"
+    )
+
+    def _default_scrap_enabled(self):
+        setting = self.env['advance.reordering.settings'].search([], limit=1)
+        return setting.scrap_enabled if setting else False
+
+    scrap_enabled = fields.Boolean(
+        default=_default_scrap_enabled,
+        string="Scrap Enabled"
     )
 
     def perform_operation(self):
@@ -152,4 +163,12 @@ class CreateReordering(models.TransientModel):
         if orderpoints:
             orderpoints.update_product_subcontract_history()
         action = self.env.ref('setu_advance_reordering_extended.product_subcontract_history_action').sudo().read()[0]
+        return action
+
+    def update_scrap_history(self):
+        domain = self.prepare_orderpoint_domain()
+        orderpoints = self.env['stock.warehouse.orderpoint'].search(domain)
+        if orderpoints:
+            orderpoints.update_product_scrap_history()
+        action = self.env.ref('setu_advance_reordering_extended.product_scrap_history_action').sudo().read()[0]
         return action

@@ -17,6 +17,7 @@
             </xpath>
             <xpath expr="//button[@name='update_iwt_history']" position="after">
                 <field name="subcontracting_enabled" invisible="1"/>
+                <field name="scrap_enabled" invisible="1"/>
                 <button name="update_production_history" string="Update Production Orders"
                         invisible="operation != 'production_history'" type="object"
                         class="oe_highlight"/>
@@ -28,6 +29,9 @@
                         class="oe_highlight"/>
                 <button name="update_subcontract_history" string="Update Subcontracting Orders"
                         invisible="operation != 'subcontract_history'" type="object"
+                        class="oe_highlight"/>
+                <button name="update_scrap_history" string="Update Scrap History"
+                        invisible="operation != 'scrap_history'" type="object"
                         class="oe_highlight"/>
             </xpath>
             <xpath expr="//field[@name='add_iwt_in_lead_calc']" position="after">

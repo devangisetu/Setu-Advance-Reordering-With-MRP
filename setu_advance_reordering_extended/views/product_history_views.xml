@@ -279,5 +279,78 @@
             <field name="binding_view_types">list,graph</field>
             <field name="view_mode">list,pivot,graph</field>
         </record>
+
+        <!-- Product Scrap History Views -->
+        <record id="product_scrap_history_tree" model="ir.ui.view">
+            <field name="name">product.scrap.history.tree</field>
+            <field name="model">product.scrap.history</field>
+            <field name="arch" type="xml">
+                <list string="Scrap History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <field name="end_date"/>
+                    <field name="duration"/>
+                    <field name="scrap_qty"/>
+                    <field name="average_daily_scrap"/>
+                    <field name="maximum_daily_scrap"/>
+                    <field name="minimum_daily_scrap"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="product_scrap_history_search" model="ir.ui.view">
+            <field name="name">product.scrap.history.search</field>
+            <field name="model">product.scrap.history</field>
+            <field name="arch" type="xml">
+                <search string="Scrap History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <separator/>
+                    <filter string="Warehouse" context="{'group_by':'warehouse_id'}" name="warehouse_id_groupby"/>
+                    <filter string="Product" context="{'group_by':'product_id'}" name="product_id_groupby"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="product_scrap_history_graph" model="ir.ui.view">
+            <field name="name">product.scrap.history.graph</field>
+            <field name="model">product.scrap.history</field>
+            <field name="arch" type="xml">
+                <graph string="Scrap History Analysis" type="bar" stacked="False">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="scrap_qty" type="measure"/>
+                    <field name="average_daily_scrap" type="measure"/>
+                    <field name="maximum_daily_scrap" type="measure"/>
+                    <field name="minimum_daily_scrap" type="measure"/>
+                </graph>
+            </field>
+        </record>
+
+        <record id="product_scrap_history_pivot" model="ir.ui.view">
+            <field name="name">product.scrap.history.pivot</field>
+            <field name="model">product.scrap.history</field>
+            <field name="arch" type="xml">
+                <pivot string="Scrap History Analysis">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="scrap_qty" type="measure"/>
+                    <field name="average_daily_scrap" type="measure"/>
+                    <field name="maximum_daily_scrap" type="measure"/>
+                    <field name="minimum_daily_scrap" type="measure"/>
+                </pivot>
+            </field>
+        </record>
+
+        <record id="product_scrap_history_action" model="ir.actions.act_window">
+            <field name="name">Scrap History Analysis</field>
+            <field name="res_model">product.scrap.history</field>
+            <field name="binding_view_types">list,graph</field>
+            <field name="view_mode">list,pivot,graph</field>
+        </record>
     </data>
 </odoo>
