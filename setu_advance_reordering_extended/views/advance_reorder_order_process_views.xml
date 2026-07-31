@@ -26,6 +26,30 @@
                         invisible="production_count == 0">
                     <field name="production_count" widget="statinfo" string="Manufacturing Orders"/>
                 </button>
+                <field name="fg_count" invisible="1"/>
+                <field name="sfg_count" invisible="1"/>
+                <field name="component_count" invisible="1"/>
+                <button type="object"
+                        name="action_view_fg"
+                        class="oe_stat_button"
+                        icon="fa-cube"
+                        invisible="fg_count == 0">
+                    <field name="fg_count" widget="statinfo" string="FG"/>
+                </button>
+                <button type="object"
+                        name="action_view_sfg"
+                        class="oe_stat_button"
+                        icon="fa-cubes"
+                        invisible="sfg_count == 0">
+                    <field name="sfg_count" widget="statinfo" string="SFG"/>
+                </button>
+                <button type="object"
+                        name="action_view_components"
+                        class="oe_stat_button"
+                        icon="fa-cogs"
+                        invisible="component_count == 0">
+                    <field name="component_count" widget="statinfo" string="Components"/>
+                </button>
             </xpath>
 
             <xpath expr="//page[@name='reorder_product']//field[@name='product_ids']//field[@name='virtual_available']"

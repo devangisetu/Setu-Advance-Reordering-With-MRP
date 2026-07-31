@@ -41,6 +41,10 @@ class AdvanceReorderOrderProcess(models.Model):
         string='Manufacturing Order Count',
         compute='_compute_production_count',
     )
+    fg_count = fields.Integer(compute='_compute_fg_count')
+    sfg_count = fields.Integer(compute='_compute_sfg_count')
+    component_count = fields.Integer(compute='_compute_component_count')
+
     has_purchase_action_summary = fields.Boolean(
         string='Has Purchase Action Summary',
         compute='_compute_summary_action_flags',
@@ -61,6 +65,99 @@ class AdvanceReorderOrderProcess(models.Model):
     def _compute_production_count(self):
         for record in self:
             record.production_count = len(record.production_ids)
+
+    def _compute_fg_count(self):
+        for record in self:
+            record.fg_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good'))
+
+    def _compute_sfg_count(self):
+        for record in self:
+            line_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good'))
+            tbp_count = len(record.to_be_produced_line_ids)
+            record.sfg_count = line_count + tbp_count
+
+    def _compute_component_count(self):
+        for record in self:
+            line_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'raw_material'))
+            comp_count = len(record.component_demand_line_ids)
+            record.component_count = line_count + comp_count
+
+    def action_view_fg(self):
+        self.ensure_one()
+        fg_lines = self.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good')
+        return {
+            'name': _('FG Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.orderprocess.line',
+            'view_mode': 'list',
+            'views': [(self.env.ref('setu_advance_reordering_extended.view_fg_demand_planning_tree').id, 'list')],
+            'domain': [('id', 'in', fg_lines.ids)],
+            'target': 'current',
+        }
+
+    def action_view_sfg(self):
+        self.ensure_one()
+        self.env['advance.reorder.planning.line'].search([('reorder_process_id', '=', self.id),('line_type', '=', 'sfg'),]).unlink()
+        planning_vals = []
+        for line in self.to_be_produced_line_ids:
+            planning_vals.append({
+                'reorder_process_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.net_demand,
+                'line_type': 'sfg',
+            })
+        sfg_lines = self.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good')
+        for line in sfg_lines:
+            planning_vals.append({
+                'reorder_process_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.demanded_qty,
+                'line_type': 'sfg',
+            })
+        if planning_vals:
+            self.env['advance.reorder.planning.line'].create(planning_vals)
+
+        return {
+            'name': _('SFG Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.planning.line',
+            'view_mode': 'list',
+            'views': [(self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
+            'domain': [('reorder_process_id', '=', self.id), ('line_type', '=', 'sfg')],
+            'target': 'current',
+        }
+
+    def action_view_components(self):
+        self.ensure_one()
+        self.env['advance.reorder.planning.line'].search([('reorder_process_id', '=', self.id),('line_type', '=', 'component'),]).unlink()
+        planning_vals = []
+        for line in self.component_demand_line_ids:
+            planning_vals.append({
+                'reorder_process_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.net_demand,
+                'line_type': 'component',
+            })
+        comp_lines = self.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'raw_material')
+        for line in comp_lines:
+            planning_vals.append({
+                'reorder_process_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.demanded_qty,
+                'line_type': 'component',
+            })
+        if planning_vals:
+            self.env['advance.reorder.planning.line'].create(planning_vals)
+
+        return {
+            'name': _('Components Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.planning.line',
+            'view_mode': 'list',
+            'views': [(self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
+            'domain': [('reorder_process_id', '=', self.id), ('line_type', '=', 'component')],
+            'target': 'current',
+        }
 
     @api.depends('summary_ids', 'summary_ids.order_action')
     def _compute_summary_action_flags(self):

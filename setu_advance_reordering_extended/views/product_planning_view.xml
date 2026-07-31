@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="product_planning_tree_view" model="ir.ui.view">
+            <field name="name">product.product.tree</field>
+            <field name="model">product.product</field>
+            <field name="arch" type="xml">
+                <list string="Products" editable="bottom">
+                    <field name="name"/>
+                    <field name="product_tmpl_id" column_invisible="True"/>
+                    <field name="reorder_bom_id" readonly="False"/>
+                    <field name="demand_planning_type"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Inherit update_orderpoint_product_advance_reorder_view to add fields -->
+        <record id="update_orderpoint_product_advance_reorder_extended_view" model="ir.ui.view">
+            <field name="name">product.product.advance.reorder.extended.form</field>
+            <field name="model">product.product</field>
+            <field name="inherit_id" ref="setu_advance_reordering.update_orderpoint_product_advance_reorder_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='update_orderpoint']" position="after">
+                    <field name="reorder_bom_id" readonly="False"/>
+                    <field name="demand_planning_type"/>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="action_product_planning" model="ir.actions.act_window">
+            <field name="name">Product Planning</field>
+            <field name="res_model">product.product</field>
+            <field name="view_mode">list</field>
+            <field name="view_id" ref="product_planning_tree_view"/>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Define product planning parameters.
+                </p>
+            </field>
+        </record>
+
+        <!-- Product Planning Menu under Configuration -->
+        <menuitem id="menu_product_planning"
+                  name="Product Planning"
+                  action="action_product_planning"
+                  parent="setu_advance_reordering.menu_sub_reorder_configuration"
+                  sequence="10"/>
+
+        <menuitem id="menu_related_boms"
+                  name="Bill of materials"
+                  parent="setu_advance_reordering.menu_sub_related_documents"
+                  action="mrp.mrp_bom_form_action"
+                  sequence="2"/>
+
+        <menuitem id="menu_related_production_orders"
+                  name="Production Orders"
+                  parent="setu_advance_reordering.menu_sub_related_documents"
+                  action="mrp.mrp_production_action"
+                  sequence="4"/>
+    </data>
+</odoo>

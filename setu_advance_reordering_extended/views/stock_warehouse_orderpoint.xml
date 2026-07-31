@@ -9,18 +9,20 @@
                 <field name="add_mo_in_lead_calc"/>
                 <field name="subcontracting_enabled" invisible="1"/>
                 <field name="add_sc_in_lead_calc" invisible="not subcontracting_enabled"/>
+                <field name="warehouse_changed" invisible="1"/>
             </xpath>
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
-                <field name="production_warehouse"/>
                 <field name="demand_planning_type"/>
+                <div class="alert alert-warning text-center" role="alert" style="margin-top: 10px; margin-bottom: 10px; grid-column: span 2;" invisible="not warehouse_changed">
+                    <strong>Warning!</strong> You have changed the warehouse. Please click <strong>"Calculate Data"</strong> to recalculate.
+                </div>
             </xpath>
 
             <xpath expr="//field[@name='visibility_days']" position="replace"/>
 
             <xpath expr="//field[@name='qty_multiple']" position="after">
                 <field name="visibility_days"/>
-                <field name="auto_create_components_orderpoint" widget="boolean_toggle" force_save="True"/>
             </xpath>
             <xpath expr="//notebook" position="replace">
                 <notebook>

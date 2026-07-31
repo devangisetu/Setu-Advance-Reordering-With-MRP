@@ -34,7 +34,6 @@ class StockWarehouseOrderpoint(models.Model):
     )
     add_mo_in_lead_calc = fields.Boolean("Production", default=False)
     add_sc_in_lead_calc = fields.Boolean("Subcontracting", default=False)
-    production_warehouse = fields.Many2one('stock.warehouse', string="Production Warehouse")
     demand_planning_type = fields.Selection([
         ('sales_driven', 'Sales Driven'),
         ('production_driven', 'Production Driven'),
@@ -44,6 +43,7 @@ class StockWarehouseOrderpoint(models.Model):
         string="Auto Create Components Orderpoint",
         default=False
     )
+    warehouse_changed = fields.Boolean(string="Warehouse Changed", default=False)
     average_sale_calculation_base = fields.Selection(string="Get Average Data From")
     max_daily_sale_qty = fields.Float("Maximum Daily Demand")
 
@@ -81,6 +81,28 @@ class StockWarehouseOrderpoint(models.Model):
             vals['add_mo_in_lead_calc'] = self.env.context.get('wizard_add_mo_in_lead_calc')
         if 'wizard_add_sc_in_lead_calc' in self.env.context:
             vals['add_sc_in_lead_calc'] = self.env.context.get('wizard_add_sc_in_lead_calc')
+
+        if 'warehouse_id' in vals:
+            changed_records = self.env['stock.warehouse.orderpoint']
+            for record in self:
+                old_warehouse = record.warehouse_id
+                new_warehouse_id = vals['warehouse_id']
+                if old_warehouse.id != new_warehouse_id:
+                    new_warehouse = self.env['stock.warehouse'].browse(new_warehouse_id)
+                    user_name = self.env.user.name
+                    body = _("Warehouse changed from %s to %s by %s.") % (
+                        old_warehouse.display_name or _("None"),
+                        new_warehouse.display_name,
+                        user_name
+                    )
+                    record.message_post(body=body)
+                    changed_records |= record
+
+            res = super().write(vals)
+            if changed_records:
+                super(StockWarehouseOrderpoint, changed_records).write({'warehouse_changed': True})
+            return res
+
         return super().write(vals)
 
     def get_sales_data(self, start_date, end_date):
@@ -341,4 +363,5 @@ class StockWarehouseOrderpoint(models.Model):
         self.onchange_safety_stock()
         self.onchange_avg_sale_lead_time()
         self.onchange_safety_stock()
+        self.write({'warehouse_changed': False})
 

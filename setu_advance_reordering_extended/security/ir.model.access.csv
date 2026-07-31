@@ -3,3 +3,9 @@ access_advance_reorder_component_demand_line,advance.reorder.component.demand.li
 access_advance_reorder_demand_source,advance.reorder.demand.source,model_advance_reorder_demand_source,base.group_user,1,1,1,1
 access_advance_reorder_to_be_produced_line,advance.reorder.to.be.produced.line,model_advance_reorder_to_be_produced_line,base.group_user,1,1,1,1
 access_advance_reorder_by_product_line,advance.reorder.by.product.line,model_advance_reorder_by_product_line,base.group_user,1,1,1,1
+access_product_production_history,product.production.history,model_product_production_history,base.group_user,1,1,1,1
+access_product_subcontract_history,product.subcontract.history,model_product_subcontract_history,base.group_user,1,1,1,1
+access_product_consumption_history,product.consumption.history,model_product_consumption_history,base.group_user,1,1,1,1
+access_product_resupply_history,product.resupply.history,model_product_resupply_history,base.group_user,1,1,1,1
+access_advance_reorder_planning_line,advance.reorder.planning.line,model_advance_reorder_planning_line,base.group_user,1,1,1,1
+
