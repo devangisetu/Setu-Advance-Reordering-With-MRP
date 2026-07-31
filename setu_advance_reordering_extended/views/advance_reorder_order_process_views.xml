@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <record id="view_fg_demand_planning_tree" model="ir.ui.view">
+        <field name="name">advance.reorder.orderprocess.line.tree.planning</field>
+        <field name="model">advance.reorder.orderprocess.line</field>
+        <field name="arch" type="xml">
+            <list string="FG Demand Calculation" create="false" edit="false" delete="false">
+                <field name="product_id"/>
+                <field name="demanded_qty" string="Demand"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_advance_reorder_planning_line_tree" model="ir.ui.view">
+        <field name="name">advance.reorder.planning.line.tree</field>
+        <field name="model">advance.reorder.planning.line</field>
+        <field name="arch" type="xml">
+            <list string="Planning Demand Details" create="false" edit="false" delete="false">
+                <field name="product_id"/>
+                <field name="net_demand" string="Net Demand"/>
+            </list>
+        </field>
+    </record>
+
     <record id="form_advance_reorder_orderprocess_extended" model="ir.ui.view">
         <field name="name">advance.reorder.orderprocess.form.extended</field>
         <field name="model">advance.reorder.orderprocess</field>

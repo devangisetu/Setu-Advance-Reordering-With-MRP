@@ -34,9 +34,81 @@
                             </div>
                         </div>
                     </div>
-
                 </div>
                 <br></br>
+            </xpath>
+
+            <xpath expr="//h2[contains(text(), 'Advance Reordering With Orderpoint')]/following-sibling::div[1]/div[contains(@class, 'o_settings_container')]"
+                   position="inside">
+
+                <div class="col-12 col-lg-6 o_setting_box" invisible="not subcontracting_enabled">
+                    <div>
+                        <label for="subcontract_lead_calc_base_on"/>
+                        <div class="text-muted">
+                            Select whether lead time should be based on subcontractor lead time, actual subcontract
+                            history receipt, or static days.
+                        </div>
+                        <div class="content-group">
+                            <div class="mt16">
+                                <field name="subcontract_lead_calc_base_on" class="o_light_label" widget="selection"/>
+                            </div>
+                        </div>
+                    </div>
+                    <br></br>
+                    <div invisible="subcontract_lead_calc_base_on not in ['vendor_lead_time','real_time']">
+                        <div>
+                            <label for="subcontract_max_lead_days_calc_method"/>
+                            <div class="text-muted">
+                                Method for Maximum Lead Days calculation: Actual Maximum Lead Time or Average + Extra
+                                Time.
+                            </div>
+                            <div class="content-group">
+                                <div class="mt16">
+                                    <field name="subcontract_max_lead_days_calc_method" class="o_light_label"
+                                           widget="selection"/>
+                                </div>
+                            </div>
+                        </div>
+                        <br></br>
+                        <div invisible="subcontract_max_lead_days_calc_method != 'avg_extra_percentage'">
+                            <label for="subcontract_extra_lead_percentage"/>
+                            <div class="text-muted">
+                                Extra Percentage for Maximum Lead time of subcontract.
+                            </div>
+                            <div class="content-group">
+                                <div class="mt16">
+                                    <field name="subcontract_extra_lead_percentage" class="oe_inline"
+                                           widget="percentage" style="text-align: right;"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-12 col-lg-6 o_setting_box">
+                    <div class="o_setting_left_pane">
+                        <field name="scrap_enabled"/>
+                    </div>
+                    <div class="o_setting_right_pane">
+                        <label for="scrap_enabled" class="fw-bold"/>
+                        <div class="text-muted">
+                            Enable scrap history tab and configuration on reordering rules.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-6 o_setting_box">
+                    <div class="o_setting_left_pane">
+                        <field name="subcontracting_enabled"/>
+                    </div>
+                    <div class="o_setting_right_pane">
+                        <label for="subcontracting_enabled" class="fw-bold"/>
+                        <div class="text-muted">
+                            Enable subcontract history, resupply history tabs and lead time configuration on reordering rules.
+                        </div>
+                    </div>
+                </div>
+
             </xpath>
         </field>
     </record>

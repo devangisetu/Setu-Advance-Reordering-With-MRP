@@ -51,6 +51,10 @@ class StockWarehouseOrderpoint(models.Model):
         compute="_compute_subcontracting_enabled",
         string="Subcontracting Enabled in Settings"
     )
+    scrap_enabled = fields.Boolean(
+        compute="_compute_scrap_enabled",
+        string="Scrap Enabled in Settings"
+    )
     product_production_history_ids = fields.One2many(
         "product.production.history", "orderpoint_id", string="Production History"
     )
@@ -63,6 +67,22 @@ class StockWarehouseOrderpoint(models.Model):
     product_resupply_history_ids = fields.One2many(
         "product.resupply.history", "orderpoint_id", string="Resupply History"
     )
+    product_scrap_history_ids = fields.One2many(
+        "product.scrap.history", "orderpoint_id", string="Scrap History"
+    )
+    parent_orderpoint_ids = fields.Many2many(
+        'stock.warehouse.orderpoint',
+        'stock_warehouse_orderpoint_parent_rel',
+        'child_orderpoint_id',
+        'parent_orderpoint_id',
+        string="Parent Product Orderpoints",
+        domain="[('id', 'in', parent_orderpoint_domain_ids)]"
+    )
+    parent_orderpoint_domain_ids = fields.Many2many(
+        'stock.warehouse.orderpoint',
+        compute="_compute_parent_orderpoint_domain_ids",
+        string="Parent Orderpoints Domain Helper"
+    )
 
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
@@ -70,11 +90,38 @@ class StockWarehouseOrderpoint(models.Model):
     )
     ads_qty = fields.Float(string="Average Daily Demand")
 
+    @api.depends('product_id')
+    def _compute_parent_orderpoint_domain_ids(self):
+        for rec in self:
+            if not rec.product_id:
+                rec.parent_orderpoint_domain_ids = self.env['stock.warehouse.orderpoint']
+                continue
+            bom_lines = self.env['mrp.bom.line'].search([('product_id', '=', rec.product_id.id)])
+            parent_templates = bom_lines.mapped('bom_id.product_tmpl_id')
+            parent_products = bom_lines.mapped('bom_id.product_id') | parent_templates.mapped('product_variant_ids')
+            domain = [('product_id', 'in', parent_products.ids)]
+            if rec.id:
+                domain.append(('id', '!=', rec.id))
+            rec.parent_orderpoint_domain_ids = self.env['stock.warehouse.orderpoint'].search(domain)
+
+    def _compute_display_name(self):
+        for rec in self:
+            if rec.product_id and rec.warehouse_id:
+                rec.display_name = f"{rec.product_id.display_name} - {rec.warehouse_id.name}"
+            else:
+                super(StockWarehouseOrderpoint, rec)._compute_display_name()
+
     def _compute_subcontracting_enabled(self):
         setting = self.env['advance.reordering.settings'].search([], limit=1)
         enabled = setting.subcontracting_enabled if setting else False
         for op in self:
             op.subcontracting_enabled = enabled
+
+    def _compute_scrap_enabled(self):
+        setting = self.env['advance.reordering.settings'].search([], limit=1)
+        enabled = setting.scrap_enabled if setting else False
+        for op in self:
+            op.scrap_enabled = enabled
 
     def write(self, vals):
         if 'wizard_add_mo_in_lead_calc' in self.env.context:
@@ -123,6 +170,11 @@ class StockWarehouseOrderpoint(models.Model):
                 lambda x: start_date <= x.start_date <= end_date)
             resupply_data = self.product_resupply_history_ids.filtered(
                 lambda x: start_date <= x.start_date <= end_date)
+            if self.scrap_enabled:
+                scrap_data = self.product_scrap_history_ids.filtered(
+                    lambda x: start_date <= x.start_date <= end_date)
+                sales_qty_sum += sum(scrap_data.mapped('scrap_qty'))
+                max_daily_qtys += scrap_data.mapped('maximum_daily_scrap')
             sales_qty_sum += sum(consumption_data.mapped('consumed_qty'))
             sales_qty_sum += sum(resupply_data.mapped('resupply_qty'))
             max_daily_qtys += consumption_data.mapped('maximum_daily_consumption')
@@ -200,6 +252,27 @@ class StockWarehouseOrderpoint(models.Model):
         max_end = max(period_ids.mapped('fpenddate'))
         query = """
             SELECT update_product_consumption_history(%s, %s, %s, %s)
+        """
+        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        return True
+
+    def update_product_scrap_history(self):
+        products = self.mapped('product_id')
+        warehouses = self.mapped('warehouse_id')
+        if not products or not warehouses:
+            return True
+        today = date.today()
+        start_date_limit = today - relativedelta(days=365)
+        period_ids = self.env['reorder.fiscalperiod'].search([
+            ('fpstartdate', '>=', start_date_limit),
+            ('fpstartdate', '<=', today)
+        ])
+        if not period_ids:
+            return True
+        min_start = min(period_ids.mapped('fpstartdate'))
+        max_end = max(period_ids.mapped('fpenddate'))
+        query = """
+            SELECT update_product_scrap_history(%s, %s, %s, %s)
         """
         self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
         return True
@@ -345,6 +418,34 @@ class StockWarehouseOrderpoint(models.Model):
               added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
               use: Recalculate order point data.
         """
+        parent_ops = self.parent_orderpoint_ids
+        if parent_ops:
+            self.reset_all_data()
+            min_qty = 0.0
+            max_qty = 0.0
+            for parent_op in parent_ops:
+                parent_product = parent_op.product_id
+                parent_bom = parent_product.reorder_bom_id
+                if not parent_bom and parent_product.bom_ids:
+                    parent_bom = parent_product.bom_ids[0]
+                if parent_bom:
+                    bom_line = parent_bom.bom_line_ids.filtered(lambda x: x.product_id == self.product_id)
+                    if bom_line:
+                        bom_qty = parent_bom.product_qty or 1.0
+                        ratio = bom_line.product_qty / bom_qty
+                        min_qty += (parent_op.suggested_min_qty or 0.0) * ratio
+                        max_qty += (parent_op.suggested_max_qty or 0.0) * ratio
+            self.write({
+                'suggested_min_qty': round(min_qty, 2),
+                'suggested_max_qty': round(max_qty, 2),
+                'product_min_qty': round(min_qty, 2),
+                'product_max_qty': round(max_qty, 2),
+                'suggested_safety_stock': 0.0,
+                'safety_stock': 0.0,
+                'warehouse_changed': False
+            })
+            return True
+
         history_context = self._context.get('already_calculated_history', False)
         self.reset_all_data()
         if not history_context:
@@ -357,6 +458,8 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_iwt_history()
             self.update_product_production_history()
             self.update_product_subcontract_history()
+            if self.scrap_enabled:
+                self.update_product_scrap_history()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
         self.onchange_average_sale_calculation_base()

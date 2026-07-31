@@ -10,10 +10,13 @@
                 <field name="subcontracting_enabled" invisible="1"/>
                 <field name="add_sc_in_lead_calc" invisible="not subcontracting_enabled"/>
                 <field name="warehouse_changed" invisible="1"/>
+                <field name="scrap_enabled" invisible="1"/>
             </xpath>
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
                 <field name="demand_planning_type"/>
+                <field name="parent_orderpoint_domain_ids" invisible="1"/>
+                <field name="parent_orderpoint_ids" widget="many2many_tags" options="{'no_create': True, 'no_edit': True}"/>
                 <div class="alert alert-warning text-center" role="alert" style="margin-top: 10px; margin-bottom: 10px; grid-column: span 2;" invisible="not warehouse_changed">
                     <strong>Warning!</strong> You have changed the warehouse. Please click <strong>"Calculate Data"</strong> to recalculate.
                 </div>
@@ -23,9 +26,10 @@
 
             <xpath expr="//field[@name='qty_multiple']" position="after">
                 <field name="visibility_days"/>
+                <field name="auto_create_components_orderpoint" widget="boolean_toggle" force_save="True"/>
             </xpath>
             <xpath expr="//notebook" position="replace">
-                <notebook>
+                <notebook invisible="parent_orderpoint_ids">
                     <!-- History Tabs -->
                     <page string="Sales History" invisible="demand_planning_type == 'production_driven'">
                         <field name="product_sales_history_ids" readonly="1">
@@ -69,6 +73,19 @@
                                 <field name="total_resupply_orders" readonly="1" optional="show"/>
                                 <field name="maximum_daily_resupply" readonly="1" optional="show"/>
                                 <field name="minimum_daily_resupply" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Scrap History" invisible="not scrap_enabled">
+                        <field name="product_scrap_history_ids" readonly="1">
+                            <list create="false" default_order="start_date desc">
+                                <field name="start_date" readonly="1" optional="show"/>
+                                <field name="end_date" readonly="1" optional="show"/>
+                                <field name="duration" readonly="1" optional="show"/>
+                                <field name="scrap_qty" readonly="1" optional="show"/>
+                                <field name="average_daily_scrap" readonly="1" optional="show"/>
+                                <field name="maximum_daily_scrap" readonly="1" optional="show"/>
+                                <field name="minimum_daily_scrap" readonly="1" optional="show"/>
                             </list>
                         </field>
                     </page>

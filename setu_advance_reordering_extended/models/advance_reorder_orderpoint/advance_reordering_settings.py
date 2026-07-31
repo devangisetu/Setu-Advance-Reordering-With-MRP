@@ -9,6 +9,11 @@ class AdvanceReorderingSettings(models.Model):
         default=False,
         help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view."
     )
+    scrap_enabled = fields.Boolean(
+        string="Scrap",
+        default=False,
+        help="If enabled, scrap history tab will be visible on the reordering rules form view."
+    )
 
     subcontract_lead_calc_base_on = fields.Selection([
         ('vendor_lead_time', 'Vendor Lead Time'),
