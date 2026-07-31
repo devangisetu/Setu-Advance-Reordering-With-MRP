@@ -67,6 +67,7 @@ class AdvanceReorderPlanner(models.Model):
     purchase_count = fields.Integer("purchase Count", compute="_compute_purchase_count")
     active = fields.Boolean(default=True)
     only_out_of_stock_product = fields.Boolean("Only Execute for Out of Stock Product")
+    company_id = fields.Many2one(comodel_name='res.company', string='Company', default=lambda self: self.env.company, )
 
     @api.onchange('vendor_selection_strategy')
     def onchange_vendor_selection_strategy(self):
@@ -86,7 +87,7 @@ class AdvanceReorderPlanner(models.Model):
               added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
               use: get products as per selected vendors or all if there is no vendor.
         """
-        company_ids = self.env.context.get('allowed_company_ids', [])
+        company_ids = self.company_id.ids if self.company_id else self.env.context.get('allowed_company_ids', [])
         for record in self:
             if record.vendor_id:
                 products = self.env['product.supplierinfo'].sudo().search(
@@ -178,6 +179,7 @@ class AdvanceReorderPlanner(models.Model):
                                            'vendor_lead_days': lead_days or 1}))
             reorder_strategy = 'on_po_creation' if self.vendor_selection_strategy == 'without_vendor' else self.vendor_selection_strategy
             return {
+                'company_id': self.company_id.id,
                 'vendor_id': False,
                 'user_id': self.user_id.id,
                 'reorder_date': datetime.now(),
@@ -219,7 +221,8 @@ class AdvanceReorderPlanner(models.Model):
             config_vals.append((0, 0, {'warehouse_group_id': config_id.warehouse_group_id.id,
                                        'default_warehouse_id': config_id.default_warehouse_id.id,
                                        'vendor_lead_days': lead_days or 1}))
-        vals = {'vendor_id': vendor_id.id,
+        vals = {'company_id': self.company_id.id,
+                'vendor_id': vendor_id.id,
                 'user_id': self.user_id.id,
                 'reorder_date': datetime.now(),
                 'vendor_selection_strategy': 'on_po_creation' if self.vendor_selection_strategy == 'without_vendor' else self.vendor_selection_strategy,

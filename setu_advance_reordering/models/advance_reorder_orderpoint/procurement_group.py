@@ -12,20 +12,6 @@ from odoo.tools import float_compare, float_is_zero, html_escape
 
 _logger = logging.getLogger(__name__)
 
-
-# class ProcurementException(Exception):
-#     """An exception raised by ProcurementGroup `run` containing all the faulty
-#     procurements.
-#     """
-#
-#     def __init__(self, procurement_exceptions):
-#         """:param procurement_exceptions: a list of tuples containing the faulty
-#         procurement and their error messages
-#         :type procurement_exceptions: list
-#         """
-#         self.procurement_exceptions = procurement_exceptions
-
-#@api.model
 def run(self, procurements, raise_user_error=True):
     """Fulfil `procurements` with the help of stock rules.
 

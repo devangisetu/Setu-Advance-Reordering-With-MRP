@@ -16,6 +16,10 @@ class AdvanceReorderOrderProcessConfig(models.Model):
     order_arrival_date = fields.Date('Order arrival date')
     advance_stock_start_date = fields.Date('Coverage days start', help="Coverage days start")
     advance_stock_end_date = fields.Date('Coverage days end', help="Coverage days end")
+    reorder_company_id = fields.Many2one(comodel_name='res.company', related='reorder_process_id.company_id',
+                                         string="Company", store=True)
+    planner_company_id = fields.Many2one(comodel_name='res.company', related='reorder_process_template_id.company_id',
+                                         string="Company", store=True)
 
     _sql_constraints = [
         ('unique_wh_group_reorder_wise', 'UNIQUE(warehouse_group_id, reorder_process_id)',

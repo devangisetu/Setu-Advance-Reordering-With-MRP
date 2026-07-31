@@ -62,6 +62,7 @@
                         </div>
                         <group readonly="state != 'draft'">
                             <group readonly="state != 'draft'">
+                                <field name="company_id" readonly="state != 'draft'" required="1"/>
                                 <field name="vendor_selection_strategy" required="1" readonly="state != 'draft'"/>
                                 <field name="vendor_id" readonly="state != 'draft'"
                                        invisible="vendor_selection_strategy != 'specific_vendor'"
@@ -115,13 +116,28 @@
                                 <field name="computed_product_ids" invisible="1"/>
                                 <field name="product_ids" nolabel="1" required="1"
                                        readonly="state != 'draft'"
-                                       domain="[('id','in',computed_product_ids),('type','!=','combo')]"/>
+                                       domain="[('id', 'in', computed_product_ids), ('type', '!=', 'combo')]">
+                                    <list string="Products" editable="bottom">
+                                        <field name="default_code" optional="hide"/>
+                                        <field name="name" string="Product" readonly="1"/>
+                                        <field name="lst_price" optional="hide" string="Sales Price"/>
+                                        <field name="standard_price" optional="hide"/>
+                                        <field name="qty_available" invisible="not is_storable" string="On Hand"
+                                               optional="show"
+                                               decoration-bf="1" groups="stock.group_stock_user"/>
+                                        <field name="virtual_available" invisible="not is_storable" string="Forecasted"
+                                               optional="show"
+                                               groups="stock.group_stock_user"/>
+                                    </list>
+                                </field>
                             </page>
                             <page string="Configurations" name="reorder_configuration" colspan="4">
                                 <field name="config_ids" nolabel="1" required="1"
                                        readonly="state != 'draft'">
                                     <list string="Configuration" editable="bottom">
-                                        <field name="warehouse_group_id" required="1"/>
+                                        <field name="reorder_company_id" column_invisible="1"/>
+                                        <field name="warehouse_group_id" required="1"
+                                               domain="[('company_id', '=', reorder_company_id)]"/>
                                         <field name="default_warehouse_id" required="1"
                                                domain="[('warehouse_group_ids','in',warehouse_group_id)]"/>
                                         <field name="vendor_lead_days" required="1"/>
@@ -151,7 +167,8 @@
                                        readonly="state in ['done','cancel','verified']">
                                     <list string="Reorder Line" editable="bottom" create="false">
                                         <field name="product_id" readonly="1" force_save="True"/>
-                                        <field name="warehouse_group_id" readonly="1" force_save="True"/>
+                                        <field name="warehouse_group_id" readonly="1" force_save="True"
+                                               optional="hide"/>
                                         <!--                                        <field name="carton_qty" readonly="1" force_save="True"/>-->
                                         <field name="average_daily_sale"
                                                column_invisible="parent.generate_demand_with == 'forecast_sales'"

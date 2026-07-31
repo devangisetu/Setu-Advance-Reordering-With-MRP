@@ -6,6 +6,9 @@
         <field name="arch" type="xml">
             <form create="false" delete="false">
                 <sheet>
+                    <group>
+                        <field name="company_id" invisible="1"/>
+                    </group>
                     <h2>Advance Reordering With Real Demand</h2>
                     <div>
                         <div class="row mt16 o_settings_container" name="advance_reordering_with_demand">

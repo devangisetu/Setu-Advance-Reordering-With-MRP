@@ -44,9 +44,10 @@
     'sequence': 26,
     'data': [
         'data/system_parameter.xml',
-        'data/demo_data.xml',
+        # 'data/demo_data.xml',
         'security/ir.model.access.csv',
         'security/advance_reordering_group.xml',
+        'security/advance_reorder_security.xml',
         'views/stock_warehouse.xml',
         'views/stock_warehouse_orderpoint.xml',
         'views/stock_move.xml',

@@ -5,7 +5,6 @@ from itertools import groupby
 from odoo.addons.stock.models.stock_rule import ProcurementException
 from odoo.tools.float_utils import float_compare
 from odoo import api, fields, models, _,SUPERUSER_ID
-from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 

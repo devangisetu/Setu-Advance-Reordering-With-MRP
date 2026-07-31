@@ -124,6 +124,7 @@ class CreateReordering(models.TransientModel):
     def update_reorder_rule(self):
         products = self.product_ids and set(self.product_ids.ids) or {}
         warehouses = self.warehouse_ids and set(self.warehouse_ids.ids) or {}
+
         for period in self.period_ids:
             query = """
                     Select * from update_product_purchase_history('%s','%s','%s','%s','%s')

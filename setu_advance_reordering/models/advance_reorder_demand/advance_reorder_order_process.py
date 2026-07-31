@@ -1,4 +1,3 @@
-from lxml import etree
 from datetime import datetime
 from dateutil import relativedelta
 from odoo import fields, models, api, _
@@ -115,6 +114,7 @@ class AdvanceReorderOrderProcess(models.Model):
                                                               according to need. Whether quickest vendor, cheapest vendor or specific vendor is suitable 
                                                               for the product"""
                                                  )
+    company_id = fields.Many2one(comodel_name='res.company', string='Company', default=lambda self: self.env.company,)
 
     @api.onchange('vendor_selection_strategy')
     def onchange_vendor_selection_strategy(self):

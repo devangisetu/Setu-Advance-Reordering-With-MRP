@@ -36,19 +36,35 @@ class AdvanceReorderingSettings(models.Model):
                                                 ], string='Vendor lead days calculation Method')
     vendor_static_lead_days = fields.Integer("Vendor Static Lead Days")
 
+    company_id = fields.Many2one(comodel_name='res.company', string='Company', default=lambda self: self.env.company,)
+
     @api.model
     def open_record_action(self):
         """
-            added by: Aastha Vora | On: Oct - 11 - 2024 | Task: 998
-            use: returns advance reordering settings view.
+        Open company-specific Advance Reordering Settings.
         """
-        view_id = self.env.ref('setu_advance_reordering.advance_reordering_settings_view_form').id
-        record = self.env['advance.reordering.settings'].search([]).id
-        return {'type': 'ir.actions.act_window',
-                'name': _('Settings - Advance Reordering'),
-                'res_model': 'advance.reordering.settings',
-                'target': 'current',
-                'res_id': record,
-                'view_mode': 'form',
-                'views': [[view_id, 'form']],
-                }
+        company = self.env.company
+
+        record = self.search([
+            ('company_id', '=', company.id)
+        ], limit=1)
+
+        if not record:
+            record = self.create({
+                'name': 'Advance Reordering Configuration',
+                'company_id': company.id,
+            })
+
+        view_id = self.env.ref(
+            'setu_advance_reordering.advance_reordering_settings_view_form'
+        ).id
+
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Settings - Advance Reordering'),
+            'res_model': 'advance.reordering.settings',
+            'res_id': record.id,
+            'view_mode': 'form',
+            'views': [(view_id, 'form')],
+            'target': 'current',
+        }

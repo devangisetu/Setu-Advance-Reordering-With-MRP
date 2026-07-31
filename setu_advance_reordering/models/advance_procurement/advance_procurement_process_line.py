@@ -7,7 +7,6 @@ class AdvanceProcurementProcessLine(models.Model):
 
     product_id = fields.Many2one('product.product', string="Product")
     warehouse_id = fields.Many2one('stock.warehouse', string="WH", help='Warehouse')
-    # carton_qty = fields.Integer('Carton Quantity')
     average_daily_sale = fields.Float('ADS', help="Average daily sale")
     available_stock = fields.Float('Free qty', help='Available Quantity - Outgoing')
     transit_time_sales = fields.Float('Transit sales', help="Sales possibility during the order transit period")

@@ -57,11 +57,12 @@
                         </div>
                         <group>
                             <group>
+                                <field name="company_id" readonly="state != 'draft'" required="1"/>
                                 <field name="vendor_selection_strategy" required="1"
                                        readonly="state != 'draft'"/>
                                 <field name="vendor_id" required="vendor_selection_strategy == 'specific_vendor'"
-                                                                invisible="vendor_selection_strategy != 'specific_vendor'"
-                                                                readonly="state != 'draft'"/>
+                                       invisible="vendor_selection_strategy != 'specific_vendor'"
+                                       readonly="state != 'draft'"/>
                                 <field name="user_id" required="1" readonly="state != 'draft'"/>
                                 <field name="auto_workflow_id" readonly="state != 'draft'"/>
                                 <separator string="scheduler configuration" colspan="4"/>
@@ -80,14 +81,14 @@
                                        readonly="state != 'draft'"/>
                                 <separator string="Choose days to calculate Average sales" colspan="4"
                                            required="generate_demand_with == 'history_sales'"
-                                                                invisible="generate_demand_with != 'history_sales'"
-                                                                readonly="state != 'draft'"/>
+                                           invisible="generate_demand_with != 'history_sales'"
+                                           readonly="state != 'draft'"/>
                                 <field name="past_days" required="generate_demand_with == 'history_sales'"
-                                                                invisible="generate_demand_with != 'history_sales'"
-                                                                readonly="state != 'draft'"/>
+                                       invisible="generate_demand_with != 'history_sales'"
+                                       readonly="state != 'draft'"/>
                                 <field name="reorder_demand_growth" required="generate_demand_with == 'history_sales'"
-                                                                           invisible="generate_demand_with != 'history_sales'"
-                                                                            readonly="state != 'draft'"/>
+                                       invisible="generate_demand_with != 'history_sales'"
+                                       readonly="state != 'draft'"/>
                             </group>
                         </group>
                         <notebook colspan="4">
@@ -100,7 +101,9 @@
                                 <field name="config_ids" nolabel="1" required="1"
                                        readonly="state != 'draft'">
                                     <list string="Configuration" editable="bottom">
-                                        <field name="warehouse_group_id" required="1"/>
+                                        <field name="planner_company_id" column_invisible="1"/>
+                                        <field name="warehouse_group_id" required="1"
+                                               domain="[('company_id', '=', planner_company_id)]"/>
                                         <field name="default_warehouse_id" required="1"
                                                domain="[('warehouse_group_ids','in',warehouse_group_id)]"/>
                                     </list>
@@ -109,10 +112,10 @@
                         </notebook>
                     </sheet>
                     <chatter reload_on_follower="True"/>
-<!--                    <div class="oe_chatter">-->
-<!--                        <field name="message_follower_ids"/>-->
-<!--                        <field name="message_ids"/>-->
-<!--                    </div>-->
+                    <!--                    <div class="oe_chatter">-->
+                    <!--                        <field name="message_follower_ids"/>-->
+                    <!--                        <field name="message_ids"/>-->
+                    <!--                    </div>-->
                 </form>
             </field>
         </record>
