@@ -13,8 +13,8 @@
                 <div class="row mt16 o_settings_container" name="advance_reordering_with_scrap_and_subcontracting">
                     <div class="col-12 col-lg-6 o_setting_box">
                         <div>
-                            <label for="consider_scrap"/>
-                            <field name="consider_scrap"/>
+                            <label for="use_scrap"/>
+                            <field name="use_scrap"/>
                             <div class="text-muted">
                                 Enable this option to include FG/SFG/Component Loss (during manufacturing)
                                 <br/>

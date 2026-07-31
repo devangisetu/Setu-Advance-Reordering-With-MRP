@@ -17,6 +17,18 @@ class AdvanceReorderOrderProcess(models.Model):
                                             help="Demand generate based on past sales or forecasted sales",
                                             default='history_sales')
 
+    calculate_demand_based_on = fields.Selection(
+        [
+            ('bom', 'Based on BOM'),
+            ('without_bom', 'Without BOM'),
+        ],
+        string='Calculate Demand Based On',
+        default='bom',
+        required=True,
+        help='Based on BOM: explode BOMs for component / to-be-produced demand. '
+             'Without BOM: calculate demand on selected products only.',
+    )
+
     component_demand_line_ids = fields.One2many(
         'advance.reorder.component.demand.line',
         'reorder_process_id',
@@ -54,12 +66,12 @@ class AdvanceReorderOrderProcess(models.Model):
         compute='_compute_summary_action_flags',
     )
 
-    @api.onchange('product_ids')
+    @api.onchange('product_ids', 'calculate_demand_based_on')
     def _onchange_product_ids(self):
         for product in self.product_ids:
             if not product.demand_planning_type:
                 product._compute_demand_planning_type()
-            if not product.reorder_bom_id:
+            if self.calculate_demand_based_on == 'bom' and not product.reorder_bom_id:
                 product.reorder_bom_id = product.get_default_bom()
 
     def _compute_production_count(self):
@@ -68,17 +80,20 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def _compute_fg_count(self):
         for record in self:
-            record.fg_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good'))
+            record.fg_count = len(
+                record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good'))
 
     def _compute_sfg_count(self):
         for record in self:
-            line_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good'))
+            line_count = len(
+                record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good'))
             tbp_count = len(record.to_be_produced_line_ids)
             record.sfg_count = line_count + tbp_count
 
     def _compute_component_count(self):
         for record in self:
-            line_count = len(record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'raw_material'))
+            line_count = len(
+                record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'raw_material'))
             comp_count = len(record.component_demand_line_ids)
             record.component_count = line_count + comp_count
 
@@ -97,7 +112,8 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def action_view_sfg(self):
         self.ensure_one()
-        self.env['advance.reorder.planning.line'].search([('reorder_process_id', '=', self.id),('line_type', '=', 'sfg'),]).unlink()
+        self.env['advance.reorder.planning.line'].search(
+            [('reorder_process_id', '=', self.id), ('line_type', '=', 'sfg'), ]).unlink()
         planning_vals = []
         for line in self.to_be_produced_line_ids:
             planning_vals.append({
@@ -106,7 +122,8 @@ class AdvanceReorderOrderProcess(models.Model):
                 'net_demand': line.net_demand,
                 'line_type': 'sfg',
             })
-        sfg_lines = self.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good')
+        sfg_lines = self.line_ids.filtered(
+            lambda l: l.product_id.reorder_product_classification == 'semi_finished_good')
         for line in sfg_lines:
             planning_vals.append({
                 'reorder_process_id': self.id,
@@ -122,14 +139,16 @@ class AdvanceReorderOrderProcess(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'advance.reorder.planning.line',
             'view_mode': 'list',
-            'views': [(self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
+            'views': [
+                (self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
             'domain': [('reorder_process_id', '=', self.id), ('line_type', '=', 'sfg')],
             'target': 'current',
         }
 
     def action_view_components(self):
         self.ensure_one()
-        self.env['advance.reorder.planning.line'].search([('reorder_process_id', '=', self.id),('line_type', '=', 'component'),]).unlink()
+        self.env['advance.reorder.planning.line'].search(
+            [('reorder_process_id', '=', self.id), ('line_type', '=', 'component'), ]).unlink()
         planning_vals = []
         for line in self.component_demand_line_ids:
             planning_vals.append({
@@ -154,7 +173,8 @@ class AdvanceReorderOrderProcess(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'advance.reorder.planning.line',
             'view_mode': 'list',
-            'views': [(self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
+            'views': [
+                (self.env.ref('setu_advance_reordering_extended.view_advance_reorder_planning_line_tree').id, 'list')],
             'domain': [('reorder_process_id', '=', self.id), ('line_type', '=', 'component')],
             'target': 'current',
         }
@@ -186,14 +206,16 @@ class AdvanceReorderOrderProcess(models.Model):
             'incoming': wh_incoming,
         }
 
-    def get_sales_data(self, config, line_product_ids):
+    def get_sales_data(self, config, line_product_ids, is_sfg=False):
         """"DP"""
         """
               added by: Aastha Vora | On: Oct - 15 - 2024 | Task: 998
               use: use to get sales data on basis of demand_with.
         """
-        sales_driven_products = line_product_ids.filtered(
-            lambda pr: pr.is_kit_component or pr.demand_planning_type in ('sales_driven', 'combined'))
+        sales_driven_products = line_product_ids
+        if not is_sfg:
+            sales_driven_products = line_product_ids.filtered(
+                lambda pr: pr.is_kit_component or pr.demand_planning_type in ('sales_driven', 'combined'))
         products = sales_driven_products and set(sales_driven_products.ids) or {}
         if not products:
             return []
@@ -240,6 +262,12 @@ class AdvanceReorderOrderProcess(models.Model):
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
+        reorder_configuration = self.env['advance.reordering.settings'].search(
+            [('company_id', '=', self.company_id.id)], limit=1)
+
+        if not reorder_configuration.use_subcontracting:
+            return []
+
         production_driven_products = line_product_ids.filtered(
             lambda pr: pr.demand_planning_type != 'sales_driven')
         products = set(production_driven_products.ids) if production_driven_products else set()
@@ -262,28 +290,17 @@ class AdvanceReorderOrderProcess(models.Model):
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_scrap_data(self, config, line_product_ids, reorder_configuration):
+    def get_scrap_data(self, config, line_product_ids, ):
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
-        if not reorder_configuration.consider_scrap:
+        reorder_configuration = self.env['advance.reordering.settings'].search(
+            [('company_id', '=', self.company_id.id)], limit=1)
+
+        if not reorder_configuration.use_scrap:
             return []
 
-        production_driven_products = line_product_ids
-
-        if reorder_configuration.consider_scrap == 'production_rejection':
-            production_driven_products = production_driven_products.filtered(
-                lambda p: p.reorder_product_classification in (
-                    'finished_good',
-                    'semi_finished_good',
-                )
-            )
-        elif reorder_configuration.consider_scrap == 'component_loss':
-            production_driven_products = production_driven_products.filtered(
-                lambda p: p.reorder_product_classification == 'raw_material'
-            )
-
-        products = set(production_driven_products.ids) if production_driven_products else set()
+        products = set(line_product_ids.ids)
         if not products:
             return []
 
@@ -404,11 +421,13 @@ class AdvanceReorderOrderProcess(models.Model):
             'stock_move_ids': [(6, 0, moves)],
         }
 
-    def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, generate_demand_with):
+    def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, is_mto_route):
         vals = []
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
-        reorder_rounding_method = self.env['advance.reordering.settings'].search([]).reorder_rounding_method
-        reorder_round_quantity = int(self.env['advance.reordering.settings'].search([]).reorder_round_quantity)
+        reorder_setting = self.env['advance.reordering.settings'].search([('company_id', '=', self.company_id.id)],
+                                                                         limit=1)
+        reorder_rounding_method = reorder_setting.reorder_rounding_method
+        reorder_round_quantity = reorder_setting.reorder_round_quantity
         demand_data.extend(kit_product_data)
 
         for data in demand_data:
@@ -418,7 +437,7 @@ class AdvanceReorderOrderProcess(models.Model):
             net_on_hand = reorder_line_vals.get('available_stock', 0.0)
             ads = data.get('ads', 0.0)
 
-            if generate_demand_with == 'history_sales':
+            if self.generate_demand_with == 'history_sales':
                 ads = reorder_demand_growth and ads + (ads * reorder_demand_growth) or ads
                 lead_days_demand = round(ads * config.vendor_lead_days, 2)
                 expected_sales = self.buffer_security_days * ads
@@ -443,13 +462,16 @@ class AdvanceReorderOrderProcess(models.Model):
                     # c1 = a - (a % b);
                     demand_adjustment_qty = demand_qty - (demand_qty % reorder_round_quantity)
 
+            if is_mto_route:
+                return round(demand_adjustment_qty, 0)
+
             reorder_line_vals.update({
                 'average_daily_sale': ads,
                 'transit_time_sales': transit_demand,
                 'stock_after_transit': stock_after_transit,
                 'expected_sales': expected_sales,
                 'sales_qty': data.get('sales_qty', 0),
-                'sales_return_qty':data.get('sales_return', 0),
+                'sales_return_qty': data.get('sales_return', 0),
                 'consumed_qty': data.get('consumed_qty', 0),
                 'resupply_qty': data.get('resupply_qty', 0),
                 'resupply_return_qty': data.get('resupply_return_qty', 0),
@@ -482,23 +504,24 @@ class AdvanceReorderOrderProcess(models.Model):
         self.check_configuration_product()
         vals = []
         reorder_vals = {}
-        reorder_configuration = self.env['advance.reordering.settings'].search([], limit=1)
         resupply_data = []
         production_data = []
         scrap_data = []
+        use_bom = self.calculate_demand_based_on == 'bom'
         for config in self.config_ids:
             line_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type != 'kit')
-            kit_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id)
-            sales_data = self.get_sales_data(config, line_product_ids)
+            kit_product_ids = self.product_ids.filtered(
+                lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id
+            )
+            sales_data = self.get_sales_data(config, line_product_ids,)
             if self.generate_demand_with == 'history_sales':
                 production_data = self.get_production_data(config, line_product_ids)
-                scrap_data = self.get_scrap_data(config, line_product_ids, reorder_configuration)
-                if reorder_configuration.use_subcontracting:
-                    resupply_data = self.get_resupply_data(config, line_product_ids)
+                scrap_data = self.get_scrap_data(config, line_product_ids, )
+                resupply_data = self.get_resupply_data(config, line_product_ids)
             demand_data = self._merge_ads_data(sales_data, production_data, resupply_data, scrap_data)
             kit_product_data = self.get_kit_product_data(config, kit_product_ids)
             vals.extend(
-                self.prepare_reorder_line_vals(config, demand_data, kit_product_data, self.generate_demand_with))
+                self.prepare_reorder_line_vals(config, demand_data, kit_product_data, is_mto_route=False))
         if not self.state == 'inprogress':
             reorder_vals = {'state': 'no_data'}
         vals and reorder_vals.update({'line_ids': vals, 'state': 'inprogress'})
@@ -506,7 +529,7 @@ class AdvanceReorderOrderProcess(models.Model):
         self.invalidate_recordset(['line_ids'])
         if self.line_ids:
             component_data, by_product_data, warehouse_groups = self._collect_mrp_tab_requirements(config)
-            self._generate_component_demand_lines(config, reorder_configuration, component_data, warehouse_groups, )
+            self._generate_component_demand_lines(config, component_data, warehouse_groups, )
             self._generate_by_product_lines(by_product_data)
         return True
 
@@ -649,6 +672,7 @@ class AdvanceReorderOrderProcess(models.Model):
             if to_be_produced:
                 if warehouse_groups is None:
                     warehouse_groups = self.config_ids.mapped('warehouse_group_id')
+
                 qty = self._create_or_update_to_be_produced_line(
                     product, qty, source_product, source_qty, warehouse_groups, produced_data, config,
                 )
@@ -687,10 +711,10 @@ class AdvanceReorderOrderProcess(models.Model):
         warehouse_qty = self._get_warehouse_qty_summary(
             product, self.env['stock.warehouse'].browse(warehouse_ids)
         )
-        reorder_configuration = self.env['advance.reordering.settings'].search([], limit=1)
-        scrap_data = self.get_scrap_data(config, product, reorder_configuration)
+        scrap_data = self.get_scrap_data(config, product, )
         return {
             'reorder_process_id': self.id,
+            'config_id': config.id,
             'product_id': product.id,
             'available_qty': warehouse_qty['available'],
             'required_qty': required_qty,
@@ -743,7 +767,7 @@ class AdvanceReorderOrderProcess(models.Model):
         produced_line = ProducedLine.create(vals)
         return produced_line.net_demand
 
-    def _generate_component_demand_lines(self, config, reorder_configuration, component_data=None,
+    def _generate_component_demand_lines(self, config, component_data=None,
                                          warehouse_groups=None, ):
         self.component_demand_line_ids.unlink()
         if component_data is None or warehouse_groups is None:
@@ -760,7 +784,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 product, self.env['stock.warehouse'].browse(warehouse_ids)
             )
             qty = bom_required_qty.get('qty')
-            scrap_data = self.get_scrap_data(config, product, reorder_configuration)
+            scrap_data = self.get_scrap_data(config, product, )
             ComponentLine.create({
                 'reorder_process_id': self.id,
                 'product_id': product_id,
@@ -859,12 +883,10 @@ class AdvanceReorderOrderProcess(models.Model):
     def _get_order_action(self, product):
         """Return the default order action for the given product."""
         route_names = set(product.route_ids.mapped('name'))
-
-        if (
-                {'Buy', 'Replenish on Order (MTO)'} <= route_names
-                or {'Manufacture', 'Replenish on Order (MTO)'} <= route_names
-        ):
-            return False
+        if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
+            return 'production'
+        if {'Buy', 'Replenish on Order (MTO)'} <= route_names:
+            return 'purchase'
 
         if product.reorder_product_classification in (
                 'finished_good',
@@ -907,6 +929,14 @@ class AdvanceReorderOrderProcess(models.Model):
             line_amount,
         )
 
+    def _is_mto_buy_or_manufacture_product(self, product):
+        """True when product has MTO with Buy and/or Manufacture routes."""
+        route_names = set(product.route_ids.mapped('name'))
+        return (
+                {'Buy', 'Replenish on Order (MTO)'} <= route_names
+                or {'Manufacture', 'Replenish on Order (MTO)'} <= route_names
+        )
+
     def _append_net_demand_summary_from_tab_lines(
             self,
             summary_vals,
@@ -923,6 +953,15 @@ class AdvanceReorderOrderProcess(models.Model):
 
             if (not product or product.id in summary_by_product):
                 continue
+
+            # MTO + Buy/Manufacture: summary demand from own sales qty only.
+            if product.reorder_product_classification == "semi_finished_good" and self._is_mto_buy_or_manufacture_product(
+                    product):
+                sales_data = self.get_sales_data(tab_line.config_id, product, is_sfg=True)
+                mto_sales_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data, [],
+                                                      is_mto_route=True, ) if sales_data else 0.0
+                if mto_sales_qty <= 0:
+                    continue
 
             order_qty = round(tab_line.net_demand)
             if order_qty <= 0:

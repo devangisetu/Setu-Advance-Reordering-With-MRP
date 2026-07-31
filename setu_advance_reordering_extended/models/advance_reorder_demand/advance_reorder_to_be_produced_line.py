@@ -70,6 +70,9 @@ class AdvanceReorderToBeProducedLine(models.Model):
         string='Source Products',
     )
 
+    config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
+                                 string='Reorder configuration', help="Reorder configuration")
+
     @api.depends('product_id')
     def _compute_bom_id(self):
         for record in self:

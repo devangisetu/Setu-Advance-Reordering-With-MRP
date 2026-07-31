@@ -5,6 +5,10 @@
         <field name="model">advance.reorder.orderprocess</field>
         <field name="inherit_id" ref="setu_advance_reordering.form_advance_reorder_orderprocess"/>
         <field name="arch" type="xml">
+            <xpath expr="//field[@name='generate_demand_with']" position="after">
+                <field name="calculate_demand_based_on" readonly="state != 'draft'"/>
+            </xpath>
+
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="attributes">
                 <attribute name="invisible">state != 'verified' or not has_purchase_action_summary</attribute>
             </xpath>
@@ -59,8 +63,10 @@
                 <field name="reorder_bom_id" string="BOM" optional="show"
                        domain="['|', ('product_id', '=', id), '&amp;', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False)]"
                        readonly="reorder_product_classification not in ('finished_good', 'semi_finished_good')"
+                       column_invisible="parent.calculate_demand_based_on == 'without_bom'"
                 />
-                <field name="reorder_bom_type" readonly="1" optional="show"/>
+                <field name="reorder_bom_type" readonly="1" optional="show"
+                       column_invisible="parent.calculate_demand_based_on == 'without_bom'"/>
                 <field name="route_ids" widget="many2many_tags" string="Routes" optional="show"
                        readonly="1"/>
                 <field name="demand_planning_type" string="Demand Planning Type" required="1"
@@ -82,6 +88,7 @@
                     <field name="to_be_produced_line_ids" nolabel="1"
                            readonly="1">
                         <list string="To Be Produced" create="false" delete="false">
+                            <field name="config_id" column_invisible="1"/>
                             <field name="product_id"/>
                             <field name="bom_id"/>
                             <field name="bom_type"/>
