@@ -10,7 +10,7 @@ class AdvanceReorderingSettings(models.Model):
         help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view."
     )
     scrap_enabled = fields.Boolean(
-        string="Scrap Enabled",
+        string="Scrap",
         default=False,
         help="If enabled, scrap history tab will be visible on the reordering rules form view."
     )

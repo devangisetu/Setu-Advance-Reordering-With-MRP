@@ -136,6 +136,11 @@ class StockWarehouseOrderpoint(models.Model):
                 lambda x: start_date <= x.start_date <= end_date)
             resupply_data = self.product_resupply_history_ids.filtered(
                 lambda x: start_date <= x.start_date <= end_date)
+            if self.scrap_enabled:
+                scrap_data = self.product_scrap_history_ids.filtered(
+                    lambda x: start_date <= x.start_date <= end_date)
+                sales_qty_sum += sum(scrap_data.mapped('scrap_qty'))
+                max_daily_qtys += scrap_data.mapped('maximum_daily_scrap')
             sales_qty_sum += sum(consumption_data.mapped('consumed_qty'))
             sales_qty_sum += sum(resupply_data.mapped('resupply_qty'))
             max_daily_qtys += consumption_data.mapped('maximum_daily_consumption')
