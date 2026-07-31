@@ -1,0 +1,1181 @@
+# -*- coding: utf-8 -*-
+import logging
+from collections import defaultdict
+from datetime import datetime
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
+_logger = logging.getLogger(__name__)
+
+class AdvanceReorderOrderProcess(models.Model):
+    _inherit = 'advance.reorder.orderprocess'
+
+    generate_demand_with = fields.Selection([('history_sales', 'Historical Sources'),
+                                             ('forecast_sales', 'Forecast Sources')],
+                                            string="Demand calculation by",
+                                            help="Demand generate based on past sales or forecasted sales",
+                                            default='history_sales')
+
+    component_demand_line_ids = fields.One2many(
+        'advance.reorder.component.demand.line',
+        'reorder_process_id',
+        string='Component Demand Lines',
+    )
+    to_be_produced_line_ids = fields.One2many(
+        'advance.reorder.to.be.produced.line',
+        'reorder_process_id',
+        string='To Be Produced Lines',
+    )
+    by_product_line_ids = fields.One2many(
+        'advance.reorder.by.product.line',
+        'reorder_process_id',
+        string='By Product Lines',
+    )
+    production_ids = fields.One2many(
+        'mrp.production',
+        'reorder_process_id',
+        string='Manufacturing Orders',
+    )
+    production_count = fields.Integer(
+        string='Manufacturing Order Count',
+        compute='_compute_production_count',
+    )
+    has_purchase_action_summary = fields.Boolean(
+        string='Has Purchase Action Summary',
+        compute='_compute_summary_action_flags',
+    )
+    has_production_action_summary = fields.Boolean(
+        string='Has Production Action Summary',
+        compute='_compute_summary_action_flags',
+    )
+
+    def _compute_production_count(self):
+        for record in self:
+            record.production_count = len(record.production_ids)
+
+    @api.depends('summary_ids', 'summary_ids.order_action')
+    def _compute_summary_action_flags(self):
+        for record in self:
+            actions = set(record.summary_ids.mapped('order_action'))
+            record.has_purchase_action_summary = 'purchase' in actions
+            record.has_production_action_summary = 'production' in actions
+
+    def _get_warehouse_qty_summary(self, product, warehouses):
+        wh_available = sum(
+            product.with_context(warehouse_id=warehouse.id).virtual_available
+            for warehouse in warehouses
+        )
+        wh_outgoing = sum(
+            product.with_context(warehouse_id=warehouse.id).outgoing_qty
+            for warehouse in warehouses
+        )
+        wh_incoming = sum(
+            product.with_context(warehouse_id=warehouse.id).incoming_qty
+            for warehouse in warehouses
+        )
+
+        return {
+            'available': max(0, wh_available),
+            'outgoing': wh_outgoing,
+            'incoming': wh_incoming,
+        }
+
+    def get_sales_data(self, config, line_product_ids):
+        """"DP"""
+        """
+              added by: Aastha Vora | On: Oct - 15 - 2024 | Task: 998
+              use: use to get sales data on basis of demand_with.
+        """
+        sales_driven_products = line_product_ids.filtered(
+            lambda pr:pr.is_kit_component or pr.demand_planning_type in ('sales_driven', 'combined'))
+        products = sales_driven_products and set(sales_driven_products.ids) or {}
+        if not products:
+            return []
+        warehouses = config.warehouse_group_id and set(config.warehouse_group_id.warehouse_ids.ids) or {}
+        if self.generate_demand_with == 'history_sales':
+            return self.get_history_sales(products, warehouses, self.sales_start_date, self.sales_end_date)
+        else:
+            return self.get_forecast_sales(products, warehouses, config)
+
+    def get_production_data(self, config, line_product_ids):
+        """"DP"""
+        """Fetch MO consumption history for ADS calculation.
+
+        Calls get_products_production_warehouse_group_wise (DB function) in the
+        same way get_history_sales calls get_products_sales_warehouse_group_wise.
+
+        Returns a list of dicts: product_id, product_name, consumed_qty, ads
+        """
+        if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
+            return []
+
+        production_driven_products = line_product_ids.filtered(
+            lambda pr: pr.demand_planning_type != 'sales_driven')
+        products = set(production_driven_products.ids) if production_driven_products else set()
+        if not products:
+            return []
+
+        warehouse_ids = self._get_warehouse_ids(config)
+        warehouses = set(warehouse_ids) if warehouse_ids else {}
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+
+        query = """
+            Select product_id, product_name,
+                sum(consumed_qty) as consumed_qty,
+                sum(ads) as ads
+            from get_products_production_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
+            group by product_id, product_name
+        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        self._cr.execute(query)
+        return self._cr.dictfetchall()
+
+    def get_resupply_data(self, config, line_product_ids):
+        if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
+            return []
+
+        production_driven_products = line_product_ids.filtered(
+            lambda pr: pr.demand_planning_type != 'sales_driven')
+        products = set(production_driven_products.ids) if production_driven_products else set()
+        if not products:
+            return []
+
+        warehouse_ids = self._get_warehouse_ids(config)
+        warehouses = set(warehouse_ids) if warehouse_ids else {}
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+
+        query = """
+            Select product_id, product_name,
+                sum(consumed_qty) as resupply_qty,
+                sum(ads) as ads
+            from get_products_subcontracting_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
+            group by product_id, product_name
+        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        self._cr.execute(query)
+        return self._cr.dictfetchall()
+
+    def get_scrap_data(self, config, line_product_ids, reorder_configuration):
+        if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
+            return []
+
+        if not any([
+            reorder_configuration.consider_both,
+            reorder_configuration.consider_production_rejection,
+            reorder_configuration.consider_component_loss,
+        ]):
+            return []
+
+        production_driven_products = line_product_ids
+
+        if (reorder_configuration.consider_both) or (
+                reorder_configuration.consider_production_rejection and reorder_configuration.consider_component_loss):
+            pass
+
+        elif reorder_configuration.consider_production_rejection:
+            production_driven_products = production_driven_products.filtered(
+                lambda p: p.reorder_product_classification in (
+                    'finished_good',
+                    'semi_finished_good',
+                )
+            )
+        elif reorder_configuration.consider_component_loss:
+            production_driven_products = production_driven_products.filtered(
+                lambda p: p.reorder_product_classification == 'raw_material'
+            )
+
+        products = set(production_driven_products.ids) if production_driven_products else set()
+        if not products:
+            return []
+
+        warehouse_ids = self._get_warehouse_ids(config)
+        warehouses = set(warehouse_ids) if warehouse_ids else {}
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+
+        query = """
+            Select product_id, product_name,
+                sum(scrap_qty) as scrap_qty,
+                sum(ads) as ads
+            from get_products_scrap_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
+            group by product_id, product_name
+        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        self._cr.execute(query)
+        return self._cr.dictfetchall()
+
+    def _merge_ads_data(self, sales_data, production_data, resupply_data, scrap_data):
+        """Merge sales, production, resupply and scrap data product-wise.
+        ADS is calculated as the average of the available ADS values.
+        """
+
+        # Create lookup dictionaries
+        sales_map = {r['product_id']: r for r in sales_data}
+        production_map = {r['product_id']: r for r in production_data}
+        resupply_map = {r['product_id']: r for r in resupply_data}
+        scrap_map = {r['product_id']: r for r in scrap_data}
+
+        # Get all products available in any source
+        product_ids = (
+                set(sales_map)
+                | set(production_map)
+                | set(resupply_map)
+                | set(scrap_map)
+        )
+
+        merged = []
+
+        for product_id in product_ids:
+            sales = sales_map.get(product_id, {})
+            production = production_map.get(product_id, {})
+            resupply = resupply_map.get(product_id, {})
+            scrap = scrap_map.get(product_id, {})
+            product = self.env['product.product'].browse(product_id)
+
+            ads_values = []
+
+            if product:
+                # Include Sales ADS unless production driven
+                if (product.is_kit_component or product.demand_planning_type != 'production_driven') and sales:
+                    ads_values.append(sales.get('ads', 0.0))
+
+                # Include Production, Resupply and Scrap ADS unless sales driven
+                if product.demand_planning_type != 'sales_driven':
+                    if production:
+                        ads_values.append(production.get('ads', 0.0))
+                    if resupply:
+                        ads_values.append(resupply.get('ads', 0.0))
+                    if scrap:
+                        ads_values.append(scrap.get('ads', 0.0))
+
+            avg_ads = sum(ads_values) / len(ads_values) if ads_values else 0.0
+
+            merged.append({
+                'product_id': product_id,
+                'product_name': (
+                        sales.get('product_name')
+                        or production.get('product_name')
+                        or resupply.get('product_name')
+                        or scrap.get('product_name')
+                ),
+                'sales_qty': sales.get('sales', 0.0),
+                'sales_return': sales.get('sales_return', 0.0),
+                'total_sales': sales.get('total_sales', 0.0),
+                'consumed_qty': production.get('consumed_qty', 0.0),
+                'resupply_qty': resupply.get('resupply_qty', 0.0),
+                'scrap_qty': scrap.get('scrap_qty', 0.0),
+                'ads': avg_ads,
+            })
+        return merged
+
+    def get_kit_product_data(self, config, kit_product_ids):
+        if not self.sales_start_date or not self.sales_end_date or not kit_product_ids:
+            return []
+
+        products = set(kit_product_ids.ids)
+        if not products:
+            return []
+
+        warehouse_ids = self._get_warehouse_ids(config)
+        warehouses = set(warehouse_ids) if warehouse_ids else {}
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+
+        query = """
+            Select product_id, product_name,
+                sum(sales_qty) as sales_qty,
+                sum(ads) as ads
+            from get_kit_product_component_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
+            group by product_id, product_name
+        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        self._cr.execute(query)
+        return self._cr.dictfetchall()
+
+    def _prepare_base_line_vals(self, config, product):
+        wh_summary = self._get_warehouse_qty_summary(
+            product, config.warehouse_group_id.warehouse_ids
+        )
+        moves = self.get_stock_move(product, config)
+        return {
+            'warehouse_group_id': config.warehouse_group_id.id,
+            'reorder_process_id': self.id,
+            'product_id': product.id,
+            'available_stock': wh_summary['available'],
+            'incoming_qty': wh_summary['incoming'],
+            'stock_move_ids': [(6, 0, moves)],
+        }
+
+    def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, generate_demand_with):
+        vals = []
+        reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
+        reorder_rounding_method = self.env['advance.reordering.settings'].search([]).reorder_rounding_method
+        reorder_round_quantity = int(self.env['advance.reordering.settings'].search([]).reorder_round_quantity)
+        demand_data.extend(kit_product_data)
+
+        for data in demand_data:
+            product = self.env['product.product'].browse(data.get('product_id'))
+            reorder_line_vals = self._prepare_base_line_vals(config, product)
+
+            net_on_hand = reorder_line_vals.get('available_stock', 0.0)
+            ads = data.get('ads', 0.0)
+
+            if generate_demand_with == 'history_sales':
+                ads = reorder_demand_growth and ads + (ads * reorder_demand_growth) or ads
+                lead_days_demand = round(ads * config.vendor_lead_days, 2)
+                expected_sales = self.buffer_security_days * ads
+            else:
+                lead_days_demand = data.get('lead_days_demand_stock', 0.0)
+                expected_sales = data.get('expected_sales_stock', 0.0)
+
+            transit_demand = lead_days_demand if net_on_hand > lead_days_demand else net_on_hand
+            transit_demand = transit_demand if transit_demand > 0.0 else 0.0
+            stock_after_transit = net_on_hand - transit_demand
+
+            demand_qty = round(0 if stock_after_transit > expected_sales
+                               else expected_sales - stock_after_transit, 2)
+            demand_adjustment_qty = demand_qty
+
+            if reorder_round_quantity and not demand_adjustment_qty % reorder_round_quantity == 0.0:
+                if reorder_rounding_method == 'round_up' and not demand_qty == 0.0:
+                    # c2 = (a + b) - (a % b);
+                    demand_adjustment_qty = (demand_qty + reorder_round_quantity) - (
+                            demand_qty % reorder_round_quantity)
+                elif reorder_rounding_method == 'round_down' and not demand_qty == 0.0:
+                    # c1 = a - (a % b);
+                    demand_adjustment_qty = demand_qty - (demand_qty % reorder_round_quantity)
+
+            reorder_line_vals.update({
+                'average_daily_sale': ads,
+                'transit_time_sales': transit_demand,
+                'stock_after_transit': stock_after_transit,
+                'expected_sales': expected_sales,
+                'sales_qty': data.get('sales_qty', 0),
+                'consumed_qty': data.get('consumed_qty', 0),
+                'resupply_qty': data.get('resupply_qty', 0),
+                'scrap_qty': data.get('scrap_qty', 0),
+                'demanded_qty': demand_qty,
+                'demand_adjustment_qty': round(demand_adjustment_qty, 0),
+            })
+
+            line_id = self.line_ids.filtered(lambda x: x.product_id == product and
+                                                       x.warehouse_group_id == config.warehouse_group_id)
+            if line_id:
+                line_id.write(reorder_line_vals)
+                continue
+            vals.append((0, 0, reorder_line_vals))
+        return vals
+
+    def action_reorder_confirm(self):
+        """"DP"""
+        """Override to merge sales and production consumption ADS per product planning type.
+
+        For each config:
+          1. Fetch sales data (via super's get_sales_data).
+          2. Fetch production consumption data (via get_production_data).
+          3. Merge both datasets per product demand_planning_type:
+               - sales_driven     → sales data only (unchanged behaviour)
+               - production_driven → production consumption ADS replaces sales ADS
+               - combined         → combined ADS = sales_ads + production_ads
+          4. Pass merged data to prepare_reorder_line_vals as usual.
+        """
+        self.check_configuration_product()
+        vals = []
+        reorder_vals = {}
+        reorder_configuration = self.env['advance.reordering.settings'].search([], limit=1)
+        resupply_data = []
+        production_data = []
+        scrap_data = []
+        for config in self.config_ids:
+            line_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type != 'kit')
+            kit_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id)
+            sales_data = self.get_sales_data(config, line_product_ids)
+            if self.generate_demand_with == 'history_sales':
+                production_data = self.get_production_data(config, line_product_ids)
+                scrap_data = self.get_scrap_data(config, line_product_ids, reorder_configuration)
+                if reorder_configuration.use_subcontracting:
+                    resupply_data = self.get_resupply_data(config, line_product_ids)
+            demand_data = self._merge_ads_data(sales_data, production_data, resupply_data, scrap_data)
+            kit_product_data = self.get_kit_product_data(config, kit_product_ids)
+            vals.extend(
+                self.prepare_reorder_line_vals(config, demand_data, kit_product_data, self.generate_demand_with))
+        if not self.state == 'inprogress':
+            reorder_vals = {'state': 'no_data'}
+        vals and reorder_vals.update({'line_ids': vals, 'state': 'inprogress'})
+        self.write(reorder_vals)
+        self.invalidate_recordset(['line_ids'])
+        if self.line_ids:
+            component_data, by_product_data, warehouse_groups = self._collect_mrp_tab_requirements(config)
+            self._generate_component_demand_lines(config, reorder_configuration, component_data, warehouse_groups, )
+            self._generate_by_product_lines(by_product_data)
+        return True
+
+    def _collect_mrp_tab_requirements(self, config):
+        self.to_be_produced_line_ids.unlink()
+        produced_data = defaultdict(float)
+        component_data = defaultdict(
+            lambda: {
+                'qty': 0.0,
+                'source_line_ids': [],
+            }
+        )
+        by_product_data = []
+        warehouse_groups = self.config_ids.mapped('warehouse_group_id')
+
+        for line in self.line_ids.filtered(lambda x: x.product_id.reorder_bom_id):
+            product = line.product_id
+            if product.is_kit_product:
+                continue
+
+            classification = product.reorder_product_classification
+            if classification == 'finished_good':
+                self._process_finished_good_line(
+                    line, component_data, produced_data, by_product_data, warehouse_groups, config,
+                )
+            elif classification == 'semi_finished_good':
+                self._process_semi_finished_good_line(
+                    line, component_data, produced_data, config,
+                    by_product_data=by_product_data, warehouse_groups=warehouse_groups,
+                )
+
+        return dict(component_data), by_product_data, warehouse_groups
+
+    def _process_finished_good_line(
+            self, line, component_data, produced_data, by_product_data, warehouse_groups, config
+    ):
+        source_qty = line.demand_adjustment_qty or 0.0
+        if line.demand_adjustment_qty > 0:
+            self._collect_bom_by_products(line.product_id, source_qty, by_product_data)
+            self._explode_bom_into_tabs(
+                line.product_id, source_qty, component_data, produced_data, config,
+                by_product_data=by_product_data,
+                parent_product=line.product_id, warehouse_groups=warehouse_groups,
+            )
+
+    def _process_semi_finished_good_line(
+            self, line, component_data, produced_data, config, by_product_data,
+            warehouse_groups=None,
+    ):
+        product = line.product_id
+
+        if line.demand_adjustment_qty > 0:
+            self._collect_bom_by_products(product, line.demand_adjustment_qty, by_product_data)
+            self._explode_bom_into_tabs(
+                product, line.demand_adjustment_qty, component_data, produced_data, config,
+                by_product_data=by_product_data,
+                parent_product=product, warehouse_groups=warehouse_groups,
+            )
+
+    def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
+        """Collect by-product qty using parent MO qty × BOM ratio.
+
+        Case 1: parent_mo_qty = reorder line production_out_demand
+        Case 2 (nested SFG): parent_mo_qty = propagated qty from FG explosion
+        """
+        if parent_mo_qty <= 0 or by_product_data is None:
+            return
+
+        bom = bom or self._get_product_bom(product)
+        if not bom or not bom.byproduct_ids:
+            return
+
+        bom_qty = bom.product_qty or 1.0
+        for byproduct in bom.byproduct_ids:
+            if not byproduct.product_id:
+                continue
+            byproduct_qty = parent_mo_qty * (byproduct.product_qty / bom_qty)
+            self._add_to_by_product_tab(
+                by_product_data, byproduct.product_id, byproduct_qty,
+                source_product=product, source_product_demand=parent_mo_qty,
+            )
+
+    def _add_to_by_product_tab(
+            self, by_product_data, product, qty, source_product=None, source_product_demand=0.0,
+    ):
+        if product and qty > 0:
+            by_product_data.append({
+                'product_id': product.id,
+                'source_product_id': source_product.id if source_product else False,
+                'source_product_demand': source_product_demand,
+                'quantity': qty,
+            })
+
+    def _explode_bom_into_tabs(
+            self, product, quantity, component_data, produced_data, config,
+            bom=None, by_product_data=None,
+            parent_product=None, warehouse_groups=None,
+    ):
+        """Explode BOM using parent MO qty × BOM component ratios.
+
+        Case 1 (direct component): required_qty = parent_mo_qty × (bom_line_qty / bom_qty)
+        Case 2 (nested SFG): required_qty = root_mo_qty × fg_sfg_ratio × sfg_component_ratio
+        achieved by propagating exploded qty through recursive calls.
+        """
+        bom = bom or self._get_product_bom(product)
+        if not bom:
+            _logger.warning(
+                'No BOM configured for product %s (ID: %s) during MRP tab generation.',
+                product.display_name,
+                product.id,
+            )
+            return
+
+        bom_parent = parent_product or product
+        bom_qty = bom.product_qty or 1.0
+        for bom_line in bom.bom_line_ids:
+            component = bom_line.product_id
+            if not component:
+                continue
+            bom_required_qty = quantity * (bom_line.product_qty / bom_qty)
+            self._route_product_to_mrp_tabs(
+                component, bom_required_qty, component_data, produced_data, config,
+                to_be_produced=True, by_product_data=by_product_data,
+                source_product=bom_parent, source_qty=bom_qty,  warehouse_groups=warehouse_groups,
+            )
+
+    def _route_product_to_mrp_tabs(
+            self, product, qty, component_data, produced_data, config,
+            to_be_produced=False, by_product_data=None, source_product=None, source_qty=0,
+            warehouse_groups=None,
+    ):
+        if not product or qty <= 0:
+            return
+
+        classification = product.reorder_product_classification
+
+        if classification == 'raw_material':
+            self._add_to_component_tab(component_data, product, qty, source_product, source_qty)
+        elif classification == 'semi_finished_good':
+            if to_be_produced:
+                if warehouse_groups is None:
+                    warehouse_groups = self.config_ids.mapped('warehouse_group_id')
+                line = self._create_or_update_to_be_produced_line(
+                    product, qty, warehouse_groups, produced_data, config,
+                )
+                qty = line.net_demand
+            self._collect_bom_by_products(product, qty, by_product_data)
+            self._explode_bom_into_tabs(
+                product, qty, component_data, produced_data, config,
+                by_product_data=by_product_data,
+                parent_product=product, warehouse_groups=warehouse_groups,
+            )
+        elif classification == 'finished_good':
+            self._collect_bom_by_products(product, qty, by_product_data)
+            self._explode_bom_into_tabs(
+                product, qty, component_data, produced_data, config,
+                by_product_data=by_product_data,
+                parent_product=product, warehouse_groups=warehouse_groups,
+            )
+
+    def _add_to_component_tab(self, component_data, product, qty, source_product, source_qty):
+        if not product or qty <= 0:
+            return
+
+        component = component_data[product.id]
+
+        component['qty'] += qty
+
+        component['source_line_ids'].append(
+            (0, 0, {
+                'source_product_id': source_product.id,
+                'source_qty': qty,
+            })
+        )
+
+    def _prepare_to_be_produced_line_vals(self, product, required_qty, warehouse_groups, config):
+        warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
+        warehouse_qty = self._get_warehouse_qty_summary(
+            product, self.env['stock.warehouse'].browse(warehouse_ids)
+        )
+        reorder_configuration = self.env['advance.reordering.settings'].search([], limit=1)
+        production_data = self.get_production_data(config, product)
+        scrap_data = self.get_scrap_data(config, product, reorder_configuration)
+        return {
+            'reorder_process_id': self.id,
+            'product_id': product.id,
+            'available_qty': warehouse_qty['available'],
+            'required_qty': required_qty,
+            'incoming_qty': warehouse_qty['incoming'],
+            'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
+            'consumed_qty':production_data[0].get('consumed_qty', 0) if production_data else 0,
+            'net_demand': max(
+                0.0,
+                required_qty - warehouse_qty['available'],
+            ),
+        }
+
+    def _create_or_update_to_be_produced_line(self, product, qty, warehouse_groups, produced_data, config):
+        """Create a to-be-produced line when an SFG is found; update if the same SFG appears again."""
+        ProducedLine = self.env['advance.reorder.to.be.produced.line']
+        if not product or qty <= 0:
+            return ProducedLine
+
+        produced_data[product.id] += qty
+        vals = self._prepare_to_be_produced_line_vals(product, qty, warehouse_groups, config)
+        return ProducedLine.create(vals)
+
+    def _generate_component_demand_lines(self, config, reorder_configuration, component_data=None,
+                                         warehouse_groups=None, ):
+        self.component_demand_line_ids.unlink()
+        if component_data is None or warehouse_groups is None:
+            component_data, _, warehouse_groups = self._collect_mrp_tab_requirements()
+        if not component_data:
+            return
+
+        ComponentLine = self.env['advance.reorder.component.demand.line']
+        warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
+
+        for product_id, bom_required_qty in component_data.items():
+            product = self.env['product.product'].browse(product_id)
+            warehouse_qty = self._get_warehouse_qty_summary(
+                product, self.env['stock.warehouse'].browse(warehouse_ids)
+            )
+            qty = bom_required_qty.get('qty')
+            production_data = self.get_production_data(config, product)
+            scrap_data = self.get_scrap_data(config, product, reorder_configuration)
+            ComponentLine.create({
+                'reorder_process_id': self.id,
+                'product_id': product_id,
+                'available_qty': warehouse_qty['available'],
+                'required_qty': qty,
+                'incoming_qty': warehouse_qty['incoming'],
+                'consumed_qty': production_data[0].get('consumed_qty', 0) if production_data else 0,
+                'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
+                'net_demand': max(0.0, (qty - warehouse_qty['available']),),
+                'source_line_ids':bom_required_qty.get('source_line_ids'),
+            })
+
+    def _generate_by_product_lines(self, by_product_data=None):
+        self.by_product_line_ids.unlink()
+        if by_product_data is None:
+            _, by_product_data, _ = self._collect_mrp_tab_requirements()
+        if not by_product_data:
+            return
+
+        ByProductLine = self.env['advance.reorder.by.product.line']
+        for entry in by_product_data:
+            quantity = entry.get('quantity', 0.0)
+            if quantity <= 0:
+                continue
+            ByProductLine.create({
+                'reorder_process_id': self.id,
+                'product_id': entry['product_id'],
+                'source_product_id': entry.get('source_product_id'),
+                'source_product_demand': entry.get('source_product_demand', 0.0),
+                'quantity': quantity,
+            })
+
+    def _get_summary_lines_for_action(self, action):
+        self.ensure_one()
+        return self.summary_ids.filtered(lambda summary: summary.order_action == action)
+
+    def _get_warehouse_ids(self, config):
+        return config.warehouse_group_id.warehouse_ids.ids
+
+
+    def _get_product_bom(self, product):
+        return product.reorder_bom_id or (product.bom_ids[:1] if product.bom_ids else self.env['mrp.bom'])
+
+
+    def action_reorder_reset_to_draft(self):
+        self.to_be_produced_line_ids.unlink()
+        self.component_demand_line_ids.unlink()
+        self.by_product_line_ids.unlink()
+        return super().action_reorder_reset_to_draft()
+
+    def _get_summary_vals_by_product(self, summary_vals):
+        return {
+            command[2]['product_id']: command[2]
+            for command in summary_vals
+            if command[0] == 0 and command[2].get('product_id')
+        }
+
+    def _get_summary_company_id(self):
+        config = self.config_ids[:1]
+        if not config or not config.warehouse_group_id:
+            return self.env.company
+        warehouse = config.warehouse_group_id.warehouse_ids[:1]
+        return warehouse.company_id if warehouse else self.env.company
+
+    def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
+        """Return purchase-related details."""
+        vendor_moq = 0
+        purchase_qty = 0
+        price = product.standard_price or 0.0
+
+        ps_info = self._get_product_supplier_info(product, company_id, demanded_qty)
+
+        if ps_info:
+            vendor_moq = ps_info.reorder_minimum_quantity
+
+            purchase_qty = round(
+                product.uom_id._compute_quantity(
+                    qty=order_qty,
+                    to_unit=product.uom_po_id,
+                )
+            )
+
+            if demanded_qty < vendor_moq:
+                purchase_qty = vendor_moq
+
+            if company_id and ps_info.currency_id != company_id.currency_id:
+                price = ps_info.currency_id._convert(
+                    ps_info.price,
+                    company_id.currency_id,
+                    company_id,
+                    self.reorder_date or fields.Date.context_today(self),
+                    False,
+                )
+            else:
+                price = ps_info.price
+
+        return vendor_moq, purchase_qty, price
+
+    def _get_order_action(self, product):
+        """Return the default order action for the given product."""
+        route_names = set(product.route_ids.mapped('name'))
+
+        if (
+                {'Buy', 'Replenish on Order (MTO)'} <= route_names
+                or {'Manufacture', 'Replenish on Order (MTO)'} <= route_names
+        ):
+            return False
+
+        if product.reorder_product_classification in (
+                'finished_good',
+                'semi_finished_good',
+        ):
+            return 'production'
+
+        return 'purchase'
+
+    def _prepare_net_demand_summary_line_vals(self,product,order_qty,demanded_qty,order_action,company_id=None,):
+        """Prepare summary line values."""
+        weight = max(product.weight or 1.0, 1.0)
+        line_volume = order_qty * (product.volume or 0.0) * weight
+
+        company_id = company_id or self._get_summary_company_id()
+
+        vendor_moq = 0
+        purchase_qty = 0
+        price = product.standard_price or 0.0
+
+        if order_action == "purchase":
+            vendor_moq, purchase_qty, price = self._get_purchase_details(
+                product,
+                company_id,
+                demanded_qty,
+                order_qty,
+            )
+        line_amount = round(order_qty) * price
+        return (
+            {
+                "product_id": product.id,
+                "demanded_qty": demanded_qty,
+                "vendor_moq": vendor_moq,
+                "order_qty": order_qty,
+                "total_volume": line_volume,
+                "to_be_ordered_in_purchase_uom": purchase_qty,
+                "order_action": order_action,
+            },
+            line_volume,
+            line_amount,
+        )
+
+    def _append_net_demand_summary_from_tab_lines(
+            self,
+            summary_vals,
+            total_volume,
+            total_amount,
+            tab_lines,
+            order_action,
+    ):
+        """Append summary lines for products not already present."""
+        summary_by_product = self._get_summary_vals_by_product(summary_vals)
+
+        for tab_line in tab_lines:
+            product = tab_line.product_id
+
+            if (not product or product.id in summary_by_product):
+                continue
+
+            order_qty = round(tab_line.net_demand)
+            if order_qty <= 0:
+                continue
+
+            line_vals, line_volume, line_amount = (
+                self._prepare_net_demand_summary_line_vals(
+                    product=product,
+                    order_qty=order_qty,
+                    demanded_qty=order_qty,
+                    order_action=order_action,
+                )
+            )
+            summary_vals.append((0, 0, line_vals))
+            summary_by_product[product.id] = line_vals
+            total_volume += line_volume
+            total_amount += line_amount
+
+        return summary_vals, total_volume, total_amount
+
+    def prepare_reorder_demand_summary_vals(self):
+        summary_vals = []
+        total_volume = 0.0
+        total_amount = 0.0
+
+        for line in self.line_ids:
+            summary_by_product = self._get_summary_vals_by_product(summary_vals)
+
+            if (not line.product_id or line.product_id.id in summary_by_product):
+                continue
+
+            lines = self.line_ids.filtered(
+                lambda l: l.product_id.id == line.product_id.id
+            )
+            demanded_qty = sum(lines.mapped("demand_adjustment_qty"))
+
+            if demanded_qty <= 0:
+                continue
+
+            line.wh_sharing_percentage = round(
+                (line.demand_adjustment_qty / demanded_qty) * 100
+            )
+            warehouse = (
+                    lines[0].warehouse_group_id
+                    and lines[0].warehouse_group_id[0].warehouse_ids[:1]
+            )
+            company_id = warehouse.company_id if warehouse else False
+
+            line_vals, line_volume, line_amount = (
+                self._prepare_net_demand_summary_line_vals(
+                    product=line.product_id,
+                    order_qty=demanded_qty,
+                    demanded_qty=demanded_qty,
+                    order_action=self._get_order_action(line.product_id),
+                    company_id=company_id,
+                )
+            )
+
+            summary_vals.append((0, 0, line_vals))
+            total_volume += line_volume
+            total_amount += line_amount
+
+        return summary_vals, total_volume, total_amount
+
+
+    def prepare_reorder_summary_vals(self):
+        summary_vals, total_volume, total_amount = self.prepare_reorder_demand_summary_vals()
+
+        summary_vals, total_volume, total_amount = (
+            self._append_net_demand_summary_from_tab_lines(
+                summary_vals=summary_vals,
+                total_volume=total_volume,
+                total_amount=total_amount,
+                tab_lines=self.to_be_produced_line_ids,
+                order_action="production",
+            )
+        )
+
+        return self._append_net_demand_summary_from_tab_lines(
+            summary_vals=summary_vals,
+            total_volume=total_volume,
+            total_amount=total_amount,
+            tab_lines=self.component_demand_line_ids,
+            order_action="purchase",
+        )
+
+    def get_vendor_product_mapping_dict(self):
+        purchase_summaries = self._get_summary_lines_for_action('purchase')
+        if not purchase_summaries:
+            return {}
+        product_ids = purchase_summaries.mapped('product_id')
+        vendor_product_dict = {}
+        if self.vendor_selection_strategy == 'specific_vendor':
+            if not self.vendor_id:
+                raise UserError(_('Please select a vendor for the specific vendor strategy.'))
+            vendor_product_dict.update({self.vendor_id.id: product_ids.ids})
+        elif self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
+            return vendor_product_dict
+        elif self.vendor_selection_strategy in ('sequence', 'price', 'delay'):
+            products_without_vendor = self.env['product.product']
+            for product in product_ids:
+                seller = product.with_context({
+                    'sort_by': self.vendor_selection_strategy,
+                    'op_company': self.user_id.company_id,
+                })._select_seller(quantity=None)
+                if not seller or not seller.partner_id:
+                    products_without_vendor |= product
+                    continue
+                partner_id = seller.partner_id.id
+                vendor_product_dict.setdefault(partner_id, []).append(product.id)
+            if products_without_vendor:
+                strategy_label = dict(
+                    self._fields['vendor_selection_strategy'].selection
+                ).get(self.vendor_selection_strategy, self.vendor_selection_strategy)
+                raise ValidationError(_(
+                    'No vendor found for the following product(s) with vendor selection '
+                    'strategy "%(strategy)s":\n%(products)s',
+                    strategy=strategy_label,
+                    products='\n'.join(
+                        '- %s' % product.display_name for product in products_without_vendor
+                    ),
+                ))
+        else:
+            for product in product_ids:
+                seller = product.with_context({
+                    'sort_by': self.vendor_selection_strategy,
+                    'op_company': self.user_id.company_id,
+                })._select_seller(quantity=None)
+                if not seller or not seller.partner_id:
+                    continue
+                partner_id = seller.partner_id.id
+                vendor_product_dict.setdefault(partner_id, []).append(product.id)
+        return vendor_product_dict
+
+    def action_create_reorder_purchase_order(self):
+        self.ensure_one()
+        purchase_summaries = self._get_summary_lines_for_action('purchase')
+        if not purchase_summaries:
+            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+
+        if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
+            return self.action_open_po_vendor_wizard()
+
+        vendor_product_dict = self.get_vendor_product_mapping_dict()
+
+        for vendor_id, product_list in vendor_product_dict.items():
+            partner = self.env['res.partner'].browse(vendor_id)
+            summary_lines = purchase_summaries.filtered(
+                lambda summary, products=product_list: summary.product_id.id in products
+            )
+            if self.vendor_selection_strategy == 'specific_vendor' and \
+                    partner.vendor_rule in ['both', 'minimum_order_value'] and \
+                    self.reorder_amount < self.minimum_reorder_amount:
+                raise UserError(_("Can not create purchase order because reorder doesn't fulfil "
+                                  "vendor's minimum order amount's rule."))
+            for config_id in self.config_ids:
+                self.create_purchase_order(
+                    config_id.default_warehouse_id,
+                    config_id.warehouse_group_id,
+                    partner=partner,
+                    summary_lines=summary_lines,
+                )
+
+        if self.purchase_ids:
+            self.write({'state': 'done'})
+        return True
+
+    def action_open_po_vendor_wizard(self):
+        self.ensure_one()
+        purchase_summaries = self._get_summary_lines_for_action('purchase')
+        if not purchase_summaries:
+            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+        return super().action_open_po_vendor_wizard()
+
+    def create_purchase_order(self, default_warehouse, warehouse_group_id, partner=None, summary_lines=None):
+        summaries = summary_lines if summary_lines is not None else self.summary_ids
+        summaries = summaries.filtered(lambda line: line.order_action == 'purchase')
+        if not summaries:
+            return True
+        return super().create_purchase_order(
+            default_warehouse,
+            warehouse_group_id,
+            partner=partner,
+            summary_lines=summaries,
+        )
+
+    def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
+        """Override to handle summary lines that have no matching reorder line.
+
+        In the extended module, summary lines can originate from:
+          - Regular demand lines (in self.line_ids) — handled by super().
+          - Component demand lines / to-be-produced lines that are not present
+            in self.line_ids (e.g. raw-material components from BOM explosion).
+
+        For lines WITH a matching reorder line, we delegate to super() so the
+        base module logic (wh_sharing_percentage, moq, etc.) is unchanged.
+
+        For lines WITHOUT a matching reorder line, we build the PO line vals
+        directly from the summary line's order_qty / to_be_ordered_in_purchase_uom.
+        """
+        partner = partner or self.vendor_id
+        if not partner:
+            raise UserError(_('A vendor is required to prepare purchase order lines.'))
+
+        summaries = summary_lines if summary_lines is not None else self.summary_ids
+        company_for_tax = warehouse_group_id.warehouse_ids[:1].company_id or self.env.company
+
+        # Split summaries into two buckets:
+        #   - backed_summaries: product exists in line_ids for this warehouse_group → use super()
+        #   - standalone_summaries: product is NOT in line_ids (e.g. component demand lines)
+        backed_summaries = self.env['advance.reorder.orderprocess.summary']
+        standalone_summaries = self.env['advance.reorder.orderprocess.summary']
+
+        for summary in summaries:
+            reorder_line = self.line_ids.filtered(
+                lambda x, pid=summary.product_id.id, wgid=warehouse_group_id.id: (
+                        x.product_id.id == pid
+                        and x.warehouse_group_id.id == wgid
+                        and x.demand_adjustment_qty > 0.0
+                )
+            )
+            if reorder_line:
+                backed_summaries |= summary
+            else:
+                standalone_summaries |= summary
+
+        # 1. Get PO lines for summaries backed by reorder lines (base behaviour).
+        po_line_vals = super()._prepare_purchase_order_line_vals(
+            fpos, warehouse_group_id, partner=partner, summary_lines=backed_summaries,
+        ) if backed_summaries else []
+
+        # 2. Build PO lines for standalone summary lines (no matching reorder line).
+        for summary_line in standalone_summaries:
+            product_id = summary_line.product_id
+            if not product_id:
+                continue
+
+            # Apply vendor MOQ: if demand is below MOQ, order at least vendor_moq.
+            # (Mirrors the base module's MOQ check; no wh_sharing_percentage here
+            #  since standalone lines have no backing reorder_line to prorate against.)
+            if summary_line.vendor_moq > 0 and summary_line.demanded_qty <= summary_line.vendor_moq:
+                quantity = summary_line.vendor_moq
+            else:
+                quantity = (
+                    summary_line.to_be_ordered_in_purchase_uom
+                    if summary_line.to_be_ordered_in_purchase_uom > 0
+                    else summary_line.order_qty
+                )
+            if not quantity:
+                continue
+
+            date_planned = self._get_date_planned(partner, product_id, quantity, datetime.today())
+            product_lang = product_id.with_prefetch().with_context(
+                lang=partner.lang,
+                partner_id=partner.id,
+            )
+
+            company_id = warehouse_group_id.warehouse_ids[:1].company_id or False
+
+            if company_id:
+                ps_info = product_id.seller_ids.filtered(
+                    lambda x, pid=partner.id, cid=company_id: (
+                            x.partner_id.id == pid
+                            and x.company_id == cid
+                            and x.currency_id == cid.currency_id
+                    )
+                )
+            else:
+                ps_info = product_id.seller_ids.filtered(
+                    lambda x, pid=partner.id: x.partner_id.id == pid
+                )
+
+            ps_info_have_min_qty = ps_info.filtered(lambda x: x.reorder_minimum_quantity > 0)
+            if ps_info_have_min_qty:
+                ps_info_have_min_qty = ps_info_have_min_qty.filtered(
+                    lambda x, qty=quantity: x.reorder_minimum_quantity <= qty
+                ).sorted(key=lambda x: x.reorder_minimum_quantity, reverse=True)
+                if ps_info_have_min_qty:
+                    ps_info = ps_info_have_min_qty[0]
+
+            ps_info = ps_info and len(ps_info) > 1 and ps_info[0] or ps_info
+            price_unit = ps_info.price if ps_info else product_id.standard_price
+
+            name = product_lang.display_name
+            if product_lang.description_purchase:
+                name += '\n' + product_lang.description_purchase
+
+            taxes = product_id.supplier_taxes_id
+            taxes_id = fpos.map_tax(taxes) if fpos else taxes
+            if taxes_id:
+                taxes_id = taxes_id.filtered(lambda x: x.company_id.id == company_for_tax.id)
+
+            po_line_vals.append((0, 0, {
+                'name': name,
+                'product_id': product_id.id,
+                'product_qty': round(quantity),
+                'price_unit': price_unit,
+                'product_uom': (
+                    product_id.uom_po_id.id
+                    if summary_line.to_be_ordered_in_purchase_uom > 0
+                    else product_id.uom_id.id
+                ),
+                'date_planned': date_planned,
+                'taxes_id': [(6, 0, taxes_id.ids)],
+            }))
+
+        return po_line_vals
+
+    def _get_default_mo_warehouse(self):
+        self.ensure_one()
+        config = self.config_ids[:1]
+        if not config or not config.default_warehouse_id:
+            raise UserError(_('No default warehouse configured for manufacturing orders.'))
+        return config.default_warehouse_id
+
+    def _prepare_manufacturing_order_vals_from_summary(self, summary_line, warehouse):
+        product = summary_line.product_id
+        bom = self._get_product_bom(product)
+        if not bom:
+            raise UserError(_(
+                'No BOM configured for product %s.',
+                product.display_name,
+            ))
+        picking_type = warehouse.manu_type_id
+        if not picking_type:
+            raise UserError(_(
+                'No manufacturing operation type configured for warehouse %s.',
+                warehouse.display_name,
+            ))
+        return {
+            'product_id': product.id,
+            'product_qty': summary_line.order_qty,
+            'bom_id': bom.id,
+            'picking_type_id': picking_type.id,
+            'company_id': warehouse.company_id.id,
+            'origin': self.name,
+            'reorder_process_id': self.id,
+        }
+
+    def action_create_manufacturing_orders(self):
+        self.ensure_one()
+        if self.state != 'verified':
+            raise UserError(_('Manufacturing orders can only be created from a verified reorder process.'))
+        production_summaries = self._get_summary_lines_for_action('production')
+        if not production_summaries:
+            raise UserError(_('No summary lines are set to Generate Production Orders.'))
+        if self.production_ids:
+            raise UserError(_('Manufacturing orders have already been created for this reorder process.'))
+
+        warehouse = self._get_default_mo_warehouse()
+        Production = self.env['mrp.production'].with_user(self.user_id).with_company(warehouse.company_id)
+        mo_vals_list = []
+        for summary_line in production_summaries:
+            if summary_line.order_qty <= 0:
+                continue
+            mo_vals_list.append(
+                self._prepare_manufacturing_order_vals_from_summary(summary_line, warehouse)
+            )
+
+        if not mo_vals_list:
+            raise UserError(_(
+                'No manufacturing orders to create. '
+                'All production summary lines have zero quantity to order.'
+            ))
+
+        Production.create(mo_vals_list)
+        return True
+
+    def action_production_count(self):
+        self.ensure_one()
+        action = self.env['ir.actions.actions']._for_xml_id('mrp.mrp_production_action')
+        productions = self.mapped('production_ids')
+        if len(productions) > 1:
+            action['domain'] = [('id', 'in', productions.ids)]
+        elif productions:
+            form_view = [(self.env.ref('mrp.mrp_production_form_view').id, 'form')]
+            if 'views' in action:
+                action['views'] = form_view + [
+                    (state, view) for state, view in action['views'] if view != 'form'
+                ]
+            else:
+                action['views'] = form_view
+            action['res_id'] = productions.id
+        return action

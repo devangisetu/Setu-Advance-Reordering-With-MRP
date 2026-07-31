@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_advance_reorder_po_vendor_wizard_form" model="ir.ui.view">
+        <field name="name">advance.reorder.po.vendor.wizard.form</field>
+        <field name="model">advance.reorder.po.vendor.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Select vendors for purchase">
+                <sheet>
+                    <group>
+                        <field name="reorder_process_id" readonly="1"/>
+                    </group>
+                    <group string="Bulk vendor assignment">
+                        <field name="bulk_vendor_id"/>
+                    </group>
+                    <field name="line_ids" nolabel="1">
+                        <list editable="bottom" create="false" delete="false">
+                            <field name="is_selected"/>
+                            <field name="summary_line_id" column_invisible="1"/>
+                            <field name="product_id"/>
+                            <field name="demanded_qty"/>
+                            <field name="order_qty"/>
+                            <field name="vendor_moq"/>
+                            <field name="vendor_id"/>
+                        </list>
+                    </field>
+                </sheet>
+                <footer>
+                    <button name="action_confirm" string="Create purchase orders" type="object" class="btn-primary"/>
+                    <button name="action_apply_bulk_vendor" string="Apply vendor to selected products"
+                            type="object" class="btn-secondary" invisible="not bulk_vendor_id"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

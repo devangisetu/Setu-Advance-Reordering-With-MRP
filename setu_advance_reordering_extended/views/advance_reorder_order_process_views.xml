@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="form_advance_reorder_orderprocess_extended" model="ir.ui.view">
+        <field name="name">advance.reorder.orderprocess.form.extended</field>
+        <field name="model">advance.reorder.orderprocess</field>
+        <field name="inherit_id" ref="setu_advance_reordering.form_advance_reorder_orderprocess"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="attributes">
+                <attribute name="invisible">state != 'verified' or not has_purchase_action_summary</attribute>
+            </xpath>
+
+            <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="after">
+                <field name="has_purchase_action_summary" invisible="1"/>
+                <field name="has_production_action_summary" invisible="1"/>
+                <button name="action_create_manufacturing_orders" string="Create MO" type="object"
+                        invisible="state != 'verified' or not has_production_action_summary or production_count > 0"
+                        class="btn-primary"/>
+            </xpath>
+
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <field name="production_count" invisible="1"/>
+                <button type="object"
+                        name="action_production_count"
+                        class="oe_stat_button"
+                        icon="fa-wrench"
+                        invisible="production_count == 0">
+                    <field name="production_count" widget="statinfo" string="Manufacturing Orders"/>
+                </button>
+            </xpath>
+
+            <xpath expr="//page[@name='reorder_product']//field[@name='product_ids']" position="replace">
+                <field name="product_ids" nolabel="1" required="1"
+                       readonly="state != 'draft'"
+                       domain="[('id', 'in', computed_product_ids), ('type', '!=', 'combo')]">
+                    <list string="Products" editable="bottom">
+                        <field name="default_code"/>
+                        <field name="name" string="Product" readonly="1"/>
+                        <field name="lst_price" optional="show" string="Sales Price"/>
+                        <field name="standard_price" optional="show"/>
+                        <field name="qty_available" invisible="not is_storable" string="On Hand" optional="show"
+                               decoration-bf="1" groups="stock.group_stock_user"/>
+                        <field name="virtual_available" invisible="not is_storable" string="Forecasted" optional="show"
+                               groups="stock.group_stock_user"/>
+                        <field name="reorder_product_classification" string="Classification" optional="show"/>
+                        <field name="reorder_bom_id" string="BOM"
+                               domain="['|', ('product_id', '=', id), '&amp;', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False)]"
+                               readonly="reorder_product_classification not in ('finished_good', 'semi_finished_good')"
+                        />
+                        <field name="reorder_bom_type" readonly="1"/>
+                        <field name="route_ids" widget="many2many_tags" string="Routes" optional="show" readonly="1"/>
+                        <field name="demand_planning_type" string="Demand Planning Type" required="1"/>
+                    </list>
+                </field>
+            </xpath>
+
+
+            <xpath expr="//page[@name='reorder_lines']//field[@name='transit_time_sales']" position="before">
+                <field name="sales_qty" optional="show"/>
+                <field name="sales_return_qty" optional="hide"/>
+                <field name="consumed_qty" optional="show"/>
+                <field name="resupply_qty" optional="show"/>
+                <field name="scrap_qty" optional="show"/>
+                <field name="historical_scrap" optional="show"/>
+            </xpath>
+
+            <page name="reorder_summary" position="before">
+                <page string="To Be Produced" name="reorder_to_be_produced"
+                      invisible="not to_be_produced_line_ids">
+                    <field name="to_be_produced_line_ids" nolabel="1"
+                           readonly="1">
+                        <list string="To Be Produced" create="false" delete="false">
+                            <field name="product_id"/>
+                            <field name="bom_id"/>
+                            <field name="bom_type"/>
+                            <field name="available_qty"/>
+                            <field name="required_qty"/>
+                            <field name="incoming_qty"/>
+                            <field name="consumed_qty"/>
+                            <field name="scrap_qty"/>
+                            <field name="historical_scrap"/>
+                            <button class="oe_stat_button oe_inline"
+                                    name="action_incoming_stock_moves"
+                                    type="object"
+                                    icon="fa-exchange"
+                                    title="Incoming Stock Moves"/>
+                            <field name="net_demand"/>
+                        </list>
+                        <form string="To Be Produced" create="false" delete="false">
+                            <sheet>
+                                <group>
+                                    <group>
+                                        <field name="product_id" readonly="1"/>
+                                        <field name="available_qty" readonly="1"/>
+                                        <field name="required_qty" readonly="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="incoming_qty" readonly="1"/>
+                                        <field name="net_demand" readonly="1"/>
+                                        <field name="production_ids" widget="many2many_tags" readonly="1"/>
+                                    </group>
+                                </group>
+                            </sheet>
+                        </form>
+                    </field>
+                </page>
+                <page string="Components Demand Calculation" name="reorder_component_demand"
+                      invisible="not component_demand_line_ids">
+                    <field name="component_demand_line_ids" nolabel="1"
+                           readonly="state in ['done', 'cancel', 'verified']">
+                        <list string="Component Demand" create="false" delete="false">
+                            <field name="product_id" readonly="1"/>
+                            <field name="available_qty" readonly="1"/>
+                            <field name="required_qty" readonly="1"/>
+                            <button name="action_view_source_products"
+                                    type="object"
+                                    title="Source Products"
+                                    icon="fa-sitemap"/>
+                            <field name="incoming_qty" readonly="1"/>
+                            <button class="oe_stat_button oe_inline"
+                                    name="action_incoming_stock_moves"
+                                    type="object"
+                                    icon="fa-exchange"
+                                    title="Incoming Stock Moves"/>
+                            <field name="consumed_qty"/>
+                            <field name="scrap_qty"/>
+                            <field name="historical_scrap"/>
+                            <field name="net_demand" readonly="1"/>
+                        </list>
+                        <form string="Component Demand" create="false" delete="false">
+                            <sheet>
+                                <group>
+                                    <group>
+                                        <field name="product_id" readonly="1"/>
+                                        <field name="available_qty" readonly="1"/>
+                                        <field name="required_qty" readonly="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="incoming_qty" readonly="1"/>
+                                        <field name="net_demand" readonly="1"/>
+                                    </group>
+                                </group>
+                            </sheet>
+                        </form>
+                    </field>
+                </page>
+                <page string="By Product" name="reorder_by_product"
+                      invisible="not by_product_line_ids">
+                    <field name="by_product_line_ids" nolabel="1" readonly="1">
+                        <list string="By Product" create="false" delete="false">
+                            <field name="source_product_id"/>
+                            <field name="source_product_demand"/>
+                            <field name="product_id"/>
+                            <field name="quantity"/>
+                        </list>
+                        <form string="By Product" create="false" delete="false">
+                            <sheet>
+                                <group>
+                                    <group>
+                                        <field name="source_product_id" readonly="1"/>
+                                        <field name="product_id" readonly="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="source_product_demand" readonly="1"/>
+                                        <field name="quantity" readonly="1"/>
+                                    </group>
+                                </group>
+                            </sheet>
+                        </form>
+                    </field>
+                </page>
+            </page>
+
+            <xpath expr="//page[@name='reorder_summary']//field[@name='summary_ids']//list" position="attributes">
+                <attribute name="editable">bottom</attribute>
+                <attribute name="create">0</attribute>
+                <attribute name="delete">0</attribute>
+            </xpath>
+
+            <xpath expr="//page[@name='reorder_summary']//field[@name='summary_ids']" position="attributes">
+                <attribute name="readonly">state in ['done', 'cancel']</attribute>
+            </xpath>
+
+            <xpath expr="//page[@name='reorder_summary']//field[@name='summary_ids']//list"
+                   position="inside">
+                <field name="order_action" readonly="parent.state != 'verified'"/>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>

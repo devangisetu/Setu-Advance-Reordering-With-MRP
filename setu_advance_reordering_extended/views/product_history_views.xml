@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Product Production History Views -->
+        <record id="product_production_history_tree" model="ir.ui.view">
+            <field name="name">product.production.history.tree</field>
+            <field name="model">product.production.history</field>
+            <field name="arch" type="xml">
+                <list string="Production Orders History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="production_id"/>
+                    <field name="mo_date"/>
+                    <field name="produced_qty"/>
+                    <field name="lead_time"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="product_production_history_search" model="ir.ui.view">
+            <field name="name">product.production.history.search</field>
+            <field name="model">product.production.history</field>
+            <field name="arch" type="xml">
+                <search string="Production Orders History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="mo_date"/>
+                    <separator/>
+                    <filter string="Warehouse" context="{'group_by':'warehouse_id'}" name="warehouse_id_groupby"/>
+                    <filter string="Product" context="{'group_by':'product_id'}" name="product_id_groupby"/>
+                    <filter string="Date" context="{'group_by':'mo_date'}" name="mo_date_groupby"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="product_production_history_graph" model="ir.ui.view">
+            <field name="name">product.production.history.graph</field>
+            <field name="model">product.production.history</field>
+            <field name="arch" type="xml">
+                <graph string="Production Orders Analysis" type="bar" stacked="False">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="mo_date" type="row"/>
+                    <field name="produced_qty" type="measure"/>
+                    <field name="lead_time" type="measure"/>
+                </graph>
+            </field>
+        </record>
+
+        <record id="product_production_history_pivot" model="ir.ui.view">
+            <field name="name">product.production.history.pivot</field>
+            <field name="model">product.production.history</field>
+            <field name="arch" type="xml">
+                <pivot string="Production Orders Analysis">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="mo_date" type="row"/>
+                    <field name="produced_qty" type="measure"/>
+                    <field name="lead_time" type="measure"/>
+                </pivot>
+            </field>
+        </record>
+
+        <record id="product_production_history_action" model="ir.actions.act_window">
+            <field name="name">Production Orders Analysis</field>
+            <field name="res_model">product.production.history</field>
+            <field name="binding_view_types">list,graph</field>
+            <field name="view_mode">list,pivot,graph</field>
+        </record>
+
+        <!-- Product Consumption History Views -->
+        <record id="product_consumption_history_tree" model="ir.ui.view">
+            <field name="name">product.consumption.history.tree</field>
+            <field name="model">product.consumption.history</field>
+            <field name="arch" type="xml">
+                <list string="Consumption History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <field name="end_date"/>
+                    <field name="duration"/>
+                    <field name="consumed_qty"/>
+                    <field name="average_daily_consumption"/>
+                    <field name="total_production_orders"/>
+                    <field name="maximum_daily_consumption"/>
+                    <field name="minimum_daily_consumption"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="product_consumption_history_search" model="ir.ui.view">
+            <field name="name">product.consumption.history.search</field>
+            <field name="model">product.consumption.history</field>
+            <field name="arch" type="xml">
+                <search string="Consumption History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <separator/>
+                    <filter string="Warehouse" context="{'group_by':'warehouse_id'}" name="warehouse_id_groupby"/>
+                    <filter string="Product" context="{'group_by':'product_id'}" name="product_id_groupby"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="product_consumption_history_graph" model="ir.ui.view">
+            <field name="name">product.consumption.history.graph</field>
+            <field name="model">product.consumption.history</field>
+            <field name="arch" type="xml">
+                <graph string="Consumption Analysis" type="bar" stacked="False">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="consumed_qty" type="measure"/>
+                    <field name="average_daily_consumption" type="measure"/>
+                </graph>
+            </field>
+        </record>
+
+        <record id="product_consumption_history_pivot" model="ir.ui.view">
+            <field name="name">product.consumption.history.pivot</field>
+            <field name="model">product.consumption.history</field>
+            <field name="arch" type="xml">
+                <pivot string="Consumption Analysis">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="consumed_qty" type="measure"/>
+                    <field name="average_daily_consumption" type="measure"/>
+                </pivot>
+            </field>
+        </record>
+
+        <record id="product_consumption_history_action" model="ir.actions.act_window">
+            <field name="name">Consumption History Analysis</field>
+            <field name="res_model">product.consumption.history</field>
+            <field name="binding_view_types">list,graph</field>
+            <field name="view_mode">list,pivot,graph</field>
+        </record>
+
+        <!-- Product Resupply History Views -->
+        <record id="product_resupply_history_tree" model="ir.ui.view">
+            <field name="name">product.resupply.history.tree</field>
+            <field name="model">product.resupply.history</field>
+            <field name="arch" type="xml">
+                <list string="Resupply History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <field name="end_date"/>
+                    <field name="duration"/>
+                    <field name="resupply_qty"/>
+                    <field name="total_resupply_qty"/>
+                    <field name="average_daily_resupply"/>
+                    <field name="total_resupply_orders"/>
+                    <field name="maximum_daily_resupply"/>
+                    <field name="minimum_daily_resupply"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="product_resupply_history_search" model="ir.ui.view">
+            <field name="name">product.resupply.history.search</field>
+            <field name="model">product.resupply.history</field>
+            <field name="arch" type="xml">
+                <search string="Resupply History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="start_date"/>
+                    <separator/>
+                    <filter string="Warehouse" context="{'group_by':'warehouse_id'}" name="warehouse_id_groupby"/>
+                    <filter string="Product" context="{'group_by':'product_id'}" name="product_id_groupby"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="product_resupply_history_graph" model="ir.ui.view">
+            <field name="name">product.resupply.history.graph</field>
+            <field name="model">product.resupply.history</field>
+            <field name="arch" type="xml">
+                <graph string="Resupply Analysis" type="bar" stacked="False">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="resupply_qty" type="measure"/>
+                    <field name="average_daily_resupply" type="measure"/>
+                </graph>
+            </field>
+        </record>
+
+        <record id="product_resupply_history_pivot" model="ir.ui.view">
+            <field name="name">product.resupply.history.pivot</field>
+            <field name="model">product.resupply.history</field>
+            <field name="arch" type="xml">
+                <pivot string="Resupply Analysis">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="start_date" type="row"/>
+                    <field name="resupply_qty" type="measure"/>
+                    <field name="average_daily_resupply" type="measure"/>
+                </pivot>
+            </field>
+        </record>
+
+        <record id="product_resupply_history_action" model="ir.actions.act_window">
+            <field name="name">Resupply History Analysis</field>
+            <field name="res_model">product.resupply.history</field>
+            <field name="binding_view_types">list,graph</field>
+            <field name="view_mode">list,pivot,graph</field>
+        </record>
+
+        <!-- Product Subcontract History Views -->
+        <record id="product_subcontract_history_tree" model="ir.ui.view">
+            <field name="name">product.subcontract.history.tree</field>
+            <field name="model">product.subcontract.history</field>
+            <field name="arch" type="xml">
+                <list string="Subcontracting Orders History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="purchase_id"/>
+                    <field name="partner_id"/>
+                    <field name="po_qty"/>
+                    <field name="purchase_price"/>
+                    <field name="po_date"/>
+                    <field name="lead_time"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="product_subcontract_history_search" model="ir.ui.view">
+            <field name="name">product.subcontract.history.search</field>
+            <field name="model">product.subcontract.history</field>
+            <field name="arch" type="xml">
+                <search string="Subcontracting Orders History">
+                    <field name="product_id"/>
+                    <field name="warehouse_id"/>
+                    <field name="orderpoint_id"/>
+                    <field name="partner_id"/>
+                    <field name="po_date"/>
+                    <separator/>
+                    <filter string="Warehouse" context="{'group_by':'warehouse_id'}" name="warehouse_id_groupby"/>
+                    <filter string="Product" context="{'group_by':'product_id'}" name="product_id_groupby"/>
+                    <filter string="Subcontractor" context="{'group_by':'partner_id'}" name="partner_id_groupby"/>
+                    <filter string="Date" context="{'group_by':'po_date'}" name="po_date_groupby"/>
+                </search>
+            </field>
+        </record>
+
+        <record id="product_subcontract_history_graph" model="ir.ui.view">
+            <field name="name">product.subcontract.history.graph</field>
+            <field name="model">product.subcontract.history</field>
+            <field name="arch" type="xml">
+                <graph string="Subcontracting Orders Analysis" type="bar" stacked="False">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="po_date" type="row"/>
+                    <field name="po_qty" type="measure"/>
+                    <field name="lead_time" type="measure"/>
+                </graph>
+            </field>
+        </record>
+
+        <record id="product_subcontract_history_pivot" model="ir.ui.view">
+            <field name="name">product.subcontract.history.pivot</field>
+            <field name="model">product.subcontract.history</field>
+            <field name="arch" type="xml">
+                <pivot string="Subcontracting Orders Analysis">
+                    <field name="warehouse_id" type="col"/>
+                    <field name="po_date" type="row"/>
+                    <field name="po_qty" type="measure"/>
+                    <field name="lead_time" type="measure"/>
+                </pivot>
+            </field>
+        </record>
+
+        <record id="product_subcontract_history_action" model="ir.actions.act_window">
+            <field name="name">Subcontracting Orders Analysis</field>
+            <field name="res_model">product.subcontract.history</field>
+            <field name="binding_view_types">list,graph</field>
+            <field name="view_mode">list,pivot,graph</field>
+        </record>
+    </data>
+</odoo>

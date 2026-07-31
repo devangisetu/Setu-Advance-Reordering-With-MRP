@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="setu_advance_reordering_inherit_view_warehouse_orderpoint_form" model="ir.ui.view">
+        <field name="name">stock.warehouse.orderpoint.form.inherit.add.mo.lead.calc</field>
+        <field name="model">stock.warehouse.orderpoint</field>
+        <field name="inherit_id" ref="setu_advance_reordering.view_warehouse_orderpoint_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='add_iwt_in_lead_calc']" position="after">
+                <field name="add_mo_in_lead_calc"/>
+                <field name="subcontracting_enabled" invisible="1"/>
+                <field name="add_sc_in_lead_calc" invisible="not subcontracting_enabled"/>
+            </xpath>
+
+            <xpath expr="//field[@name='warehouse_id']" position="after">
+                <field name="production_warehouse"/>
+                <field name="demand_planning_type"/>
+            </xpath>
+
+            <xpath expr="//field[@name='visibility_days']" position="replace"/>
+
+            <xpath expr="//field[@name='qty_multiple']" position="after">
+                <field name="visibility_days"/>
+                <field name="auto_create_components_orderpoint" widget="boolean_toggle" force_save="True"/>
+            </xpath>
+            <xpath expr="//notebook" position="replace">
+                <notebook>
+                    <!-- History Tabs -->
+                    <page string="Sales History" invisible="demand_planning_type == 'production_driven'">
+                        <field name="product_sales_history_ids" readonly="1">
+                            <list create="false" default_order="start_date desc">
+                                <field name="start_date" readonly="1" optional="show"/>
+                                <field name="end_date" readonly="1" optional="show"/>
+                                <field name="duration" readonly="1" optional="show"/>
+                                <field name="actual_sales_qty"/>
+                                <field name="actual_sales_return_qty"/>
+                                <field name="sales_qty" readonly="1" optional="show"/>
+                                <field name="total_orders" readonly="1" optional="show"/>
+                                <field name="average_daily_sale" readonly="1" optional="show"/>
+                                <field name="max_daily_sale_qty" readonly="1" optional="show"/>
+                                <field name="min_daily_sale_qty" readonly="1" optional="hide"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Consumption History" invisible="demand_planning_type == 'sales_driven'">
+                        <field name="product_consumption_history_ids" readonly="1">
+                            <list create="false" default_order="start_date desc">
+                                <field name="start_date" readonly="1" optional="show"/>
+                                <field name="end_date" readonly="1" optional="show"/>
+                                <field name="duration" readonly="1" optional="show"/>
+                                <field name="consumed_qty" readonly="1" optional="show"/>
+                                <field name="average_daily_consumption" readonly="1" optional="show"/>
+                                <field name="total_production_orders" readonly="1" optional="show"/>
+                                <field name="maximum_daily_consumption" readonly="1" optional="show"/>
+                                <field name="minimum_daily_consumption" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Resupply History" invisible="not subcontracting_enabled or demand_planning_type == 'sales_driven'">
+                        <field name="product_resupply_history_ids" readonly="1">
+                            <list create="false" default_order="start_date desc">
+                                <field name="start_date" readonly="1" optional="show"/>
+                                <field name="end_date" readonly="1" optional="show"/>
+                                <field name="duration" readonly="1" optional="show"/>
+                                <field name="resupply_qty" readonly="1" optional="show"/>
+                                <field name="total_resupply_qty" readonly="1" optional="show"/>
+                                <field name="average_daily_resupply" readonly="1" optional="show"/>
+                                <field name="total_resupply_orders" readonly="1" optional="show"/>
+                                <field name="maximum_daily_resupply" readonly="1" optional="show"/>
+                                <field name="minimum_daily_resupply" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+
+                    <!-- Orders Tabs -->
+                    <page string="Purchase Orders" invisible="not add_purchase_in_lead_calc">
+                        <field name="product_purchase_history_ids" readonly="1">
+                            <list create="false" default_order="po_date desc">
+                                <field name="purchase_id" readonly="1"/>
+                                <field name="po_date" readonly="1" optional="show"/>
+                                <field name="partner_id" readonly="1" optional="show"/>
+                                <field name="po_qty" readonly="1" optional="show"/>
+                                <field name="currency_id" readonly="1" optional="show"/>
+                                <field name="purchase_price" readonly="1" optional="show"/>
+                                <field name="lead_time" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Production Orders" invisible="not add_mo_in_lead_calc">
+                        <field name="product_production_history_ids" readonly="1">
+                            <list create="false" default_order="mo_date desc">
+                                <field name="production_id" readonly="1"/>
+                                <field name="mo_date" readonly="1" optional="show"/>
+                                <field name="produced_qty" readonly="1" optional="show"/>
+                                <field name="lead_time" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Subcontract Orders" invisible="not subcontracting_enabled or not add_sc_in_lead_calc">
+                        <field name="product_subcontract_history_ids" readonly="1">
+                            <list create="false" default_order="po_date desc">
+                                <field name="purchase_id" readonly="1"/>
+                                <field name="po_date" readonly="1" optional="show"/>
+                                <field name="partner_id" readonly="1" optional="show"/>
+                                <field name="po_qty" readonly="1" optional="show"/>
+                                <field name="currency_id" readonly="1" optional="show"/>
+                                <field name="purchase_price" readonly="1" optional="show"/>
+                                <field name="lead_time" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+
+                    <!-- Warehouse Movement Transfer -->
+                    <page string="Warehouse Movement Transfer" invisible="not add_iwt_in_lead_calc">
+                        <field name="product_warehouse_movement_history_ids" readonly="1">
+                            <list create="false" default_order="date desc">
+                                <field name="picking_id" readonly="1"/>
+                                <field name="product_id" readonly="1" optional="show"/>
+                                <field name="date" readonly="1" optional="show"/>
+                                <field name="qty" readonly="1" optional="show"/>
+                                <field name="lead_time" readonly="1" optional="show"/>
+                            </list>
+                        </field>
+                    </page>
+                </notebook>
+            </xpath>
+        </field>
+    </record>
+</odoo>

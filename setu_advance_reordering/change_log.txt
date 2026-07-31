@@ -1,0 +1,24 @@
+Date : 11th August 2025
+Version : 1.2 (in __manifest__.py)
+Odoo Version : 18.0
+Done by : Satyam Kapadiya
+Tested by : Aastha Vora, Satyam Kapadiya
+Module : setu_advance_reordering
+	- Added base group to all model and replace controller with base controller. 
+
+Date : 14th July 2025
+Version : 1.1 (in __manifest__.py)
+Odoo Version : 18.0
+Done by : Aastha Vora
+Tested by : Aastha Vora, Ashish Rangani
+Module : setu_advance_reordering
+     - Added additional parameters to the (_prepare_purchase_order_line_from_procurement) method as per the Odoo update.
+
+Date : 29 Nov 2024
+Version : 1.0 (in __manifest__.py)
+Odoo Version : 18.0
+Done by : Ashish G
+Tested by : Ashish G
+Module : setu_advance_reordering
+      - Published on App Store.
+
