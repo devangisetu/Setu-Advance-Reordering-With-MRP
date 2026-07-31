@@ -97,7 +97,7 @@
         <menuitem id="menu_sub_reorder_configuration"
                   name="Configuration"
                   parent="setu_advance_reordering.menu_main_advance_reorder_process"
-                  sequence="5"/>
+                  sequence="6"/>
 
         <menuitem id="menu_reorder_res_settings"
                   name="Settings - Advance Reordering"
@@ -129,5 +129,38 @@
                   parent="setu_advance_reordering.menu_sub_reorder_configuration"
                   sequence="5"
                   action="setu_advance_reordering.actions_advance_reorder_process_auto_workflow"/>
+
+        <!-- Related Documents Menu -->
+        <menuitem id="menu_sub_related_documents"
+                  name="Related Documents"
+                  parent="setu_advance_reordering.menu_main_advance_reorder_process"
+                  sequence="5"/>
+
+        <!-- Submenus under Related Documents -->
+        <menuitem id="menu_related_products"
+                  name="Products"
+                  parent="menu_sub_related_documents"
+                  action="product.product_normal_action"
+                  sequence="1"/>
+
+
+        <menuitem id="menu_related_vendor_pricelists"
+                  name="Vendor Pricelist"
+                  parent="menu_sub_related_documents"
+                  action="product.product_supplierinfo_type_action"
+                  sequence="3"/>
+
+
+        <menuitem id="menu_related_sale_orders"
+                  name="Sale Orders"
+                  parent="menu_sub_related_documents"
+                  action="sale.action_orders"
+                  sequence="5"/>
+
+        <menuitem id="menu_related_purchase_orders"
+                  name="Purchase Order"
+                  parent="menu_sub_related_documents"
+                  action="purchase.purchase_form_action"
+                  sequence="6"/>
     </data>
 </odoo>
