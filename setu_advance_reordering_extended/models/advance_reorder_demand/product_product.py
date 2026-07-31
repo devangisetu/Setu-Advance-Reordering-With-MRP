@@ -20,8 +20,6 @@ class ProductProduct(models.Model):
     reorder_bom_id = fields.Many2one(
         'mrp.bom',
         string='Reorder BOM',
-        compute='_compute_reorder_bom_id',
-        store=True,
         domain="['|', ('product_id', '=', id), '&', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False), ('active', '=', True)]",
         help='BOM used for MRP component demand calculation.',
     )
@@ -58,12 +56,6 @@ class ProductProduct(models.Model):
         compute="_compute_is_kit_component",
     )
 
-    @api.depends('bom_ids')
-    def _compute_reorder_bom_id(self):
-        for product in self:
-            product.reorder_bom_id = False
-            if len(product.bom_ids) == 1:
-                product.reorder_bom_id = product.bom_ids
 
     @api.depends('reorder_bom_id', 'reorder_bom_type')
     def _compute_is_kit_product(self):
@@ -80,14 +72,30 @@ class ProductProduct(models.Model):
                 ('bom_id.active', '=', True),
             ]))
 
-    def get_default_bom(self):
+    def get_default_bom(self, company_id=None):
         self.ensure_one()
-        return self.env['mrp.bom'].search([
+
+        domain = [
             ('active', '=', True),
             '|',
             ('product_id', '=', self.id),
-            '&', ('product_tmpl_id', '=', self.product_tmpl_id.id), ('product_id', '=', False),
-        ], order='sequence, id', limit=1)
+            '&',
+            ('product_tmpl_id', '=', self.product_tmpl_id.id),
+            ('product_id', '=', False),
+        ]
+
+        if company_id:
+            domain += [
+                '|',
+                ('company_id', '=', company_id),
+                ('company_id', '=', False),
+            ]
+
+        return self.env['mrp.bom'].search(
+            domain,
+            order='sequence, id',
+            limit=1,
+        )
 
 
     @api.depends('reorder_product_classification')

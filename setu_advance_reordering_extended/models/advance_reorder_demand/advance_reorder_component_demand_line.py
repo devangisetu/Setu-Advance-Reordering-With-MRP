@@ -35,24 +35,13 @@ class AdvanceReorderComponentDemandLine(models.Model):
         string='Net Demand',
         store=True,
     )
-    consumed_qty = fields.Float(string='Consumed Qty',)
     scrap_qty = fields.Float(string='Scrap Qty',)
-    historical_scrap = fields.Float(string='Historical Scrap(%)', compute='_compute_historical_scrap', store=True)
 
     source_line_ids = fields.One2many(
-        'advance.reorder.component.demand.source',
+        'advance.reorder.demand.source',
         'component_demand_line_id',
         string='Source Products',
     )
-
-    @api.depends('consumed_qty', 'scrap_qty')
-    def _compute_historical_scrap(self):
-        for line in self:
-            total_qty = line.consumed_qty + line.scrap_qty
-            line.historical_scrap = (
-                ((line.scrap_qty / total_qty) * 100) if total_qty else 0.0
-            )
-
 
     def action_incoming_stock_moves(self):
         self.ensure_one()
@@ -75,7 +64,7 @@ class AdvanceReorderComponentDemandLine(models.Model):
         return {
             'type': 'ir.actions.act_window',
             'name': _('Source Products'),
-            'res_model': 'advance.reorder.component.demand.source',
+            'res_model': 'advance.reorder.demand.source',
             'view_mode': 'list',
             'target': 'new',
             'domain': [

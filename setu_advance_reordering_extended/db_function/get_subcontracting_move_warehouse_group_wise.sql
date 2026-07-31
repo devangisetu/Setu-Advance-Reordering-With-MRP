@@ -19,7 +19,8 @@ RETURNS TABLE(
     product_id integer,
     product_name varchar,
     warehouse_id integer,
-    consumed_qty numeric,
+    resupply_qty numeric,
+    resupply_return_qty numeric,
     ads numeric
 )
 AS
@@ -33,28 +34,68 @@ SELECT
     sm.product_id,
     pt.name::varchar AS product_name,
     wh.id AS warehouse_id,
-    SUM(sm.quantity) AS consumed_qty,
-    CASE
-        WHEN SUM(sm.quantity) > 0
-            THEN SUM(sm.quantity) / day_difference
-        ELSE 0
-    END AS ads
+
+    -- Quantity sent to subcontractor
+    SUM(
+        CASE
+            WHEN dl.is_subcontracting_location = TRUE
+                 AND sl.usage != 'production'
+            THEN sm.quantity
+            ELSE 0
+        END
+    ) AS resupply_qty,
+
+    -- Quantity returned from subcontractor
+    SUM(
+        CASE
+            WHEN sl.is_subcontracting_location = TRUE
+                 AND dl.usage != 'production'
+            THEN sm.quantity
+            ELSE 0
+        END
+    ) AS resupply_return_qty,
+
+    (
+        SUM(
+            CASE
+                WHEN dl.is_subcontracting_location = TRUE
+                     AND sl.usage != 'production'
+                THEN sm.quantity
+                ELSE 0
+            END
+        )
+        -
+        SUM(
+            CASE
+                WHEN sl.is_subcontracting_location = TRUE
+                     AND dl.usage != 'production'
+                THEN sm.quantity
+                ELSE 0
+            END
+        )
+    ) / NULLIF(day_difference, 0)::numeric AS ads
+
 FROM stock_move sm
-LEFT JOIN stock_location dl
-    ON dl.id = sm.location_dest_id
+
 LEFT JOIN stock_location sl
     ON sl.id = sm.location_id
+
+LEFT JOIN stock_location dl
+    ON dl.id = sm.location_dest_id
+
 LEFT JOIN product_product pp
     ON pp.id = sm.product_id
+
 LEFT JOIN product_template pt
     ON pt.id = pp.product_tmpl_id
+
 LEFT JOIN stock_warehouse wh
     ON wh.id = sm.warehouse_id
+
 WHERE
     sm.state = 'done'
-    AND dl.is_subcontracting_location = TRUE
-    AND sl.usage != 'production'
     AND sm.date::date BETWEEN start_date AND end_date
+
     AND (
         company_ids IS NULL
         OR company_ids = '{}'
@@ -77,6 +118,12 @@ WHERE
         warehouse_ids IS NULL
         OR warehouse_ids = '{}'
         OR sm.warehouse_id = ANY(warehouse_ids)
+    )
+
+    AND (
+        (dl.is_subcontracting_location = TRUE AND sl.usage != 'production')
+        OR
+        (sl.is_subcontracting_location = TRUE AND dl.usage != 'production')
     )
 
 GROUP BY

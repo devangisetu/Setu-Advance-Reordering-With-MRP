@@ -19,14 +19,5 @@ class AdvanceReorderOrderprocessLine(models.Model):
              '(non-zero for production_driven / combined planning types).',
     )
     resupply_qty = fields.Float(string='Resupply Qty',)
+    resupply_return_qty = fields.Float(string='Resupply Return Qty',)
     scrap_qty = fields.Float(string='Scraped Qty',)
-    historical_scrap = fields.Float(string='Historical Scrap(%)', compute='_compute_historical_scrap', store=True)
-    
-
-    @api.depends('consumed_qty', 'scrap_qty')
-    def _compute_historical_scrap(self):
-        for line in self:
-            total_qty = line.consumed_qty + line.scrap_qty
-            line.historical_scrap = (
-                ((line.scrap_qty / total_qty) * 100) if total_qty else 0.0
-            )

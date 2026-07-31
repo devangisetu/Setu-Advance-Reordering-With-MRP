@@ -7,48 +7,22 @@
         <field name="arch" type="xml">
             <xpath expr="//div[@name='advance_reordering_vendor_lead']"
                    position="after">
-                <br></br>
-                <div class="row mt16 o_settings_container" name="advance_reordering_with_scrap">
-                    <div class="col-12 col-lg-6 o_setting_box">
-                        <div>
-                            <field name="consider_component_loss"/>
-                            <label for="consider_component_loss"/>
-                            <div class="text-muted">
-                                Enable this option to include Component Loss (material loss during manufacturing)
-                                <br/>
-                                while calculating Real Demand in Advance Reordering.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-12 col-lg-6 o_setting_box">
-                        <div>
-                            <field name="consider_production_rejection"/>
-                            <label for="consider_production_rejection"/>
-                            <div class="text-muted">
-                                Enable this option to include Production Rejections (rejected Finished/Semi-finished
-                                products)
-                                <br/>
-                                while calculating Real Demand in Advance Reordering.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-12 col-lg-6 o_setting_box">
-                        <div>
-                            <field name="consider_both"/>
-                            <label for="consider_both"/>
-                            <div class="text-muted">
-                                Enable this option to include both Component Loss and Production Rejections
-                                <br/>
-                                while calculating Real Demand in Advance Reordering.
-                            </div>
-                        </div>
-                    </div>
-
+                <div class="mt16 mb16">
+                    <h3>Scrap &amp; Subcontracting Settings</h3>
                 </div>
-                <br></br>
-                <div class="row mt16 o_settings_container" name="advance_reordering_with_subcontracting">
+                <div class="row mt16 o_settings_container" name="advance_reordering_with_scrap_and_subcontracting">
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div>
+                            <label for="consider_scrap"/>
+                            <field name="consider_scrap"/>
+                            <div class="text-muted">
+                                Enable this option to include FG/SFG/Component Loss (during manufacturing)
+                                <br/>
+                                while calculating Real Demand in Advance Reordering.
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="col-12 col-lg-6 o_setting_box">
                         <div>
                             <field name="use_subcontracting"/>
@@ -60,6 +34,7 @@
                             </div>
                         </div>
                     </div>
+
                 </div>
                 <br></br>
             </xpath>

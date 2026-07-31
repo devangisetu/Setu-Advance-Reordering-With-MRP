@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 
 
 class AdvanceReorderToBeProducedLine(models.Model):
@@ -62,17 +62,13 @@ class AdvanceReorderToBeProducedLine(models.Model):
         compute="_compute_bom_type",
         store=True)
 
-    consumed_qty = fields.Float(string='Consumed Qty', )
     scrap_qty = fields.Float(string='Scrap Qty',)
-    historical_scrap = fields.Float(string='Historical Scrap(%)', compute='_compute_historical_scrap', store=True)
 
-    @api.depends('consumed_qty', 'scrap_qty')
-    def _compute_historical_scrap(self):
-        for line in self:
-            total_qty = line.consumed_qty + line.scrap_qty
-            line.historical_scrap = (
-                ((line.scrap_qty / total_qty) * 100) if total_qty else 0.0
-            )
+    source_line_ids = fields.One2many(
+        'advance.reorder.demand.source',
+        'to_be_produced_demand_line_id',
+        string='Source Products',
+    )
 
     @api.depends('product_id')
     def _compute_bom_id(self):
@@ -112,3 +108,17 @@ class AdvanceReorderToBeProducedLine(models.Model):
         )
         action['domain'] = [('id', 'in', move_ids)]
         return action
+
+    def action_view_source_products(self):
+        self.ensure_one()
+
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Source Products'),
+            'res_model': 'advance.reorder.demand.source',
+            'view_mode': 'list',
+            'target': 'new',
+            'domain': [
+                ('to_be_produced_demand_line_id', '=', self.id)
+            ],
+        }
