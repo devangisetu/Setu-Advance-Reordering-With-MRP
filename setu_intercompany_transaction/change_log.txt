@@ -1,0 +1,42 @@
+Date : 5th May 2026
+Version : '1.4' (in __manifest__.py)
+Odoo Version : 18
+Done by : Aastha Vora
+Module : setu_intercompany_transaction
+- Added Groups to ICT related fields and button added to sale order.
+
+Date : 5th June 2025
+Version : '1.3' (in __manifest__.py)
+Odoo Version : 18
+Done by : Aastha Vora
+Tested by : Aastha Vora,Nikhil Sudra
+Module : setu_intercompany_transaction
+- Fix bill validation issue for ICT-based POs.
+
+Date : 1 May 2025
+Version : '1.2' (in __manifest__.py)
+Odoo Version : 18
+Done by : Harshit Trivedi
+Tested by : Harshit Trivedi,Payal Kheradiya
+Module : setu_intercompany_transaction
+- Change of the ICT with the change of MultiCompany With Channel PriceUnit Issue.
+
+Date : 18 ARP 2025
+Version : '1.1' (in __manifest__.py)
+Odoo Version : 18
+Done by : Harshit Trivedi
+Tested by : Harshit Trivedi,Payal Kheradiya
+Module : setu_intercompany_transaction
+- Add changes of the showcase whole the ICT records in Sale Order
+- Add changes of the Channel Pricelist from the fulfiller Company
+
+
+Date : 01 Jan 2025
+Version : '1.0' (in __manifest__.py)
+Odoo Version : 18
+Done by : Aastha Vora
+Tested by : Aastha Vora, Payal Kheradiya
+Module : setu_intercompany_transaction
+- added UOM and Packaging for ICT and IWT.
+- added 'Inprogress' state for ICT and IWT.
+- set operation type for reverse ICT transfer as per the normal ICT.
