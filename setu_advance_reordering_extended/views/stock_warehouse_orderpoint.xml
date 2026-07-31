@@ -15,6 +15,8 @@
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
                 <field name="demand_planning_type"/>
+                <field name="parent_orderpoint_domain_ids" invisible="1"/>
+                <field name="parent_orderpoint_ids" widget="many2many_tags" options="{'no_create': True, 'no_edit': True}"/>
                 <div class="alert alert-warning text-center" role="alert" style="margin-top: 10px; margin-bottom: 10px; grid-column: span 2;" invisible="not warehouse_changed">
                     <strong>Warning!</strong> You have changed the warehouse. Please click <strong>"Calculate Data"</strong> to recalculate.
                 </div>
@@ -27,7 +29,7 @@
                 <field name="auto_create_components_orderpoint" widget="boolean_toggle" force_save="True"/>
             </xpath>
             <xpath expr="//notebook" position="replace">
-                <notebook>
+                <notebook invisible="parent_orderpoint_ids">
                     <!-- History Tabs -->
                     <page string="Sales History" invisible="demand_planning_type == 'production_driven'">
                         <field name="product_sales_history_ids" readonly="1">

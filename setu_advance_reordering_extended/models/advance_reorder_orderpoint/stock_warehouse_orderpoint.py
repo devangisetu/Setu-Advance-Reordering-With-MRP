@@ -70,12 +70,46 @@ class StockWarehouseOrderpoint(models.Model):
     product_scrap_history_ids = fields.One2many(
         "product.scrap.history", "orderpoint_id", string="Scrap History"
     )
+    parent_orderpoint_ids = fields.Many2many(
+        'stock.warehouse.orderpoint',
+        'stock_warehouse_orderpoint_parent_rel',
+        'child_orderpoint_id',
+        'parent_orderpoint_id',
+        string="Parent Product Orderpoints",
+        domain="[('id', 'in', parent_orderpoint_domain_ids)]"
+    )
+    parent_orderpoint_domain_ids = fields.Many2many(
+        'stock.warehouse.orderpoint',
+        compute="_compute_parent_orderpoint_domain_ids",
+        string="Parent Orderpoints Domain Helper"
+    )
 
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
         help='Consider current period data in the calculation history'
     )
     ads_qty = fields.Float(string="Average Daily Demand")
+
+    @api.depends('product_id')
+    def _compute_parent_orderpoint_domain_ids(self):
+        for rec in self:
+            if not rec.product_id:
+                rec.parent_orderpoint_domain_ids = self.env['stock.warehouse.orderpoint']
+                continue
+            bom_lines = self.env['mrp.bom.line'].search([('product_id', '=', rec.product_id.id)])
+            parent_templates = bom_lines.mapped('bom_id.product_tmpl_id')
+            parent_products = bom_lines.mapped('bom_id.product_id') | parent_templates.mapped('product_variant_ids')
+            domain = [('product_id', 'in', parent_products.ids)]
+            if rec.id:
+                domain.append(('id', '!=', rec.id))
+            rec.parent_orderpoint_domain_ids = self.env['stock.warehouse.orderpoint'].search(domain)
+
+    def _compute_display_name(self):
+        for rec in self:
+            if rec.product_id and rec.warehouse_id:
+                rec.display_name = f"{rec.product_id.display_name} - {rec.warehouse_id.name}"
+            else:
+                super(StockWarehouseOrderpoint, rec)._compute_display_name()
 
     def _compute_subcontracting_enabled(self):
         setting = self.env['advance.reordering.settings'].search([], limit=1)
@@ -384,6 +418,34 @@ class StockWarehouseOrderpoint(models.Model):
               added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
               use: Recalculate order point data.
         """
+        parent_ops = self.parent_orderpoint_ids
+        if parent_ops:
+            self.reset_all_data()
+            min_qty = 0.0
+            max_qty = 0.0
+            for parent_op in parent_ops:
+                parent_product = parent_op.product_id
+                parent_bom = parent_product.reorder_bom_id
+                if not parent_bom and parent_product.bom_ids:
+                    parent_bom = parent_product.bom_ids[0]
+                if parent_bom:
+                    bom_line = parent_bom.bom_line_ids.filtered(lambda x: x.product_id == self.product_id)
+                    if bom_line:
+                        bom_qty = parent_bom.product_qty or 1.0
+                        ratio = bom_line.product_qty / bom_qty
+                        min_qty += (parent_op.suggested_min_qty or 0.0) * ratio
+                        max_qty += (parent_op.suggested_max_qty or 0.0) * ratio
+            self.write({
+                'suggested_min_qty': round(min_qty, 2),
+                'suggested_max_qty': round(max_qty, 2),
+                'product_min_qty': round(min_qty, 2),
+                'product_max_qty': round(max_qty, 2),
+                'suggested_safety_stock': 0.0,
+                'safety_stock': 0.0,
+                'warehouse_changed': False
+            })
+            return True
+
         history_context = self._context.get('already_calculated_history', False)
         self.reset_all_data()
         if not history_context:
