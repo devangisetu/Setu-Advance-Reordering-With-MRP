@@ -431,43 +431,40 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
 
             classification = product.reorder_product_classification
-            if classification == 'finished_good':
-                self._process_finished_good_line(
-                    line, component_data, produced_data, by_product_data, warehouse_groups, config,
-                )
-            elif classification == 'semi_finished_good':
-                self._process_semi_finished_good_line(
-                    line, component_data, produced_data, config,
-                    by_product_data=by_product_data, warehouse_groups=warehouse_groups,
+            if classification in ('finished_good', 'semi_finished_good'):
+                self._process_bom_product_line(
+                    line,
+                    component_data,
+                    produced_data,
+                    config,
+                    by_product_data=by_product_data,
+                    warehouse_groups=warehouse_groups,
                 )
 
         return dict(component_data), by_product_data, warehouse_groups
 
-    def _process_finished_good_line(
-            self, line, component_data, produced_data, by_product_data, warehouse_groups, config
+    def _process_bom_product_line(
+            self, line, component_data, produced_data, config,
+            by_product_data, warehouse_groups=None,
     ):
-        source_qty = line.demand_adjustment_qty or 0.0
-        if line.demand_adjustment_qty > 0:
-            self._collect_bom_by_products(line.product_id, source_qty, by_product_data)
-            self._explode_bom_into_tabs(
-                line.product_id, source_qty, component_data, produced_data, config,
-                by_product_data=by_product_data,
-                parent_product=line.product_id, warehouse_groups=warehouse_groups,
-            )
+        """Process Finished Goods and Semi-Finished Goods."""
+        if line.demand_adjustment_qty <= 0:
+            return
 
-    def _process_semi_finished_good_line(
-            self, line, component_data, produced_data, config, by_product_data,
-            warehouse_groups=None,
-    ):
         product = line.product_id
+        qty = line.demand_adjustment_qty
 
-        if line.demand_adjustment_qty > 0:
-            self._collect_bom_by_products(product, line.demand_adjustment_qty, by_product_data)
-            self._explode_bom_into_tabs(
-                product, line.demand_adjustment_qty, component_data, produced_data, config,
-                by_product_data=by_product_data,
-                parent_product=product, warehouse_groups=warehouse_groups,
-            )
+        self._collect_bom_by_products(product, qty, by_product_data)
+        self._explode_bom_into_tabs(
+            product,
+            qty,
+            component_data,
+            produced_data,
+            config,
+            by_product_data=by_product_data,
+            parent_product=product,
+            warehouse_groups=warehouse_groups,
+        )
 
     def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
         """Collect by-product qty using parent MO qty × BOM ratio.
@@ -533,13 +530,13 @@ class AdvanceReorderOrderProcess(models.Model):
             if not component:
                 continue
             bom_required_qty = quantity * (bom_line.product_qty / bom_qty)
-            self._route_product_to_mrp_tabs(
+            self._process_product_by_classification(
                 component, bom_required_qty, component_data, produced_data, config,
                 to_be_produced=True, by_product_data=by_product_data,
                 source_product=bom_parent, source_qty=bom_qty, warehouse_groups=warehouse_groups,
             )
 
-    def _route_product_to_mrp_tabs(
+    def _process_product_by_classification(
             self, product, qty, component_data, produced_data, config,
             to_be_produced=False, by_product_data=None, source_product=None, source_qty=0,
             warehouse_groups=None,
