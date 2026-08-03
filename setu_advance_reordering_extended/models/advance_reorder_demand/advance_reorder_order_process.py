@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from decimal import Decimal, ROUND_HALF_UP
 
 _logger = logging.getLogger(__name__)
 
@@ -25,8 +26,9 @@ class AdvanceReorderOrderProcess(models.Model):
         string='Calculate Demand Based On',
         default='bom',
         required=True,
-        help='Based on BOM: explode BOMs for component / to-be-produced demand. '
-             'Without BOM: calculate demand on selected products only.',
+        help='Based on BOM: explode using the product Reorder BOM. '
+             'Without BOM: split FG/SFG demand across BOMs using completed MO '
+             'usage ratios, then explode each BOM for component demand.',
     )
 
     component_demand_line_ids = fields.One2many(
@@ -507,7 +509,6 @@ class AdvanceReorderOrderProcess(models.Model):
         resupply_data = []
         production_data = []
         scrap_data = []
-        use_bom = self.calculate_demand_based_on == 'bom'
         for config in self.config_ids:
             line_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type != 'kit')
             kit_product_ids = self.product_ids.filtered(
@@ -544,47 +545,194 @@ class AdvanceReorderOrderProcess(models.Model):
         )
         by_product_data = []
         warehouse_groups = self.config_ids.mapped('warehouse_group_id')
+        use_bom = self.calculate_demand_based_on == 'bom'
 
-        for line in self.line_ids.filtered(lambda x: x.product_id.reorder_bom_id):
+        # Prefetch MO BOM-wise data once for without-BOM mode (covers FG + nested SFG).
+        mo_bom_wise_data = {}
+        if not use_bom:
+            product_ids = self.line_ids.filtered(
+                lambda line: (
+                        line.demand_adjustment_qty > 0
+                        and line.product_id.reorder_product_classification in (
+                            'finished_good',
+                            'semi_finished_good',
+                        )
+                )
+            ).mapped('product_id')
+            mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
+
+        for line in self.line_ids:
             product = line.product_id
-            if product.is_kit_product:
+            qty = line.demand_adjustment_qty
+            if qty <= 0 or product.is_kit_product:
+                continue
+            if use_bom and not product.reorder_bom_id:
+                continue
+            if not use_bom and not product.bom_ids:
                 continue
 
             classification = product.reorder_product_classification
             if classification in ('finished_good', 'semi_finished_good'):
-                self._process_bom_product_line(
-                    line,
+                self._explode_bom_into_tabs(
+                    product,
+                    qty,
                     component_data,
                     produced_data,
                     config,
                     by_product_data=by_product_data,
+                    parent_product=product,
                     warehouse_groups=warehouse_groups,
+                    mo_bom_wise_data=mo_bom_wise_data,
                 )
-
         return dict(component_data), by_product_data, warehouse_groups
 
-    def _process_bom_product_line(
-            self, line, component_data, produced_data, config,
-            by_product_data, warehouse_groups=None,
+
+    def _explode_bom_into_tabs(
+            self, product, quantity, component_data, produced_data, config,
+            bom=None, by_product_data=None,
+            parent_product=None, warehouse_groups=None, mo_bom_wise_data={},
     ):
-        """Process Finished Goods and Semi-Finished Goods."""
-        if line.demand_adjustment_qty <= 0:
+        if quantity <= 0:
             return
 
-        product = line.product_id
-        qty = line.demand_adjustment_qty
+        if self.calculate_demand_based_on == 'without_bom':
+            bom_allocations = self._get_bom_wise_demand_by_mo_ratio(
+                product,
+                quantity,
+                mo_bom_wise_data=mo_bom_wise_data,
+            )
+        else:
+            default_bom = self._get_product_bom(product)
+            bom_allocations = [(default_bom, quantity)] if default_bom else []
 
-        self._collect_bom_by_products(product, qty, by_product_data)
-        self._explode_bom_into_tabs(
-            product,
-            qty,
-            component_data,
-            produced_data,
-            config,
-            by_product_data=by_product_data,
-            parent_product=product,
-            warehouse_groups=warehouse_groups,
-        )
+        if not bom_allocations:
+            _logger.warning(
+                "No BOM found for product %s (ID: %s).",
+                product.display_name,
+                product.id,
+            )
+            return
+
+        bom_parent = parent_product or product
+
+        for current_bom, current_qty in bom_allocations:
+            self._collect_bom_by_products( product, current_qty, by_product_data, bom=current_bom,)
+
+            bom_qty = current_bom.product_qty or 1.0
+
+            for bom_line in current_bom.bom_line_ids:
+                component = bom_line.product_id
+                if not component:
+                    continue
+
+                required_qty = current_qty * (bom_line.product_qty / bom_qty)
+
+                self._process_product_by_classification(
+                    component, required_qty, component_data, produced_data, config,
+                    by_product_data=by_product_data,
+                    source_product=bom_parent, source_qty=bom_qty,
+                    warehouse_groups=warehouse_groups, mo_bom_wise_data=mo_bom_wise_data,
+                )
+
+    def _process_product_by_classification(
+            self, product, qty, component_data, produced_data, config,
+            by_product_data=None, source_product=None, source_qty=0,
+            warehouse_groups=None, mo_bom_wise_data=None,
+    ):
+        if not product or qty <= 0:
+            return
+
+        classification = product.reorder_product_classification
+        mo_bom_wise_data = mo_bom_wise_data or {}
+
+        if classification == 'raw_material':
+            self._add_to_component_tab(component_data, product, qty, source_product, source_qty)
+
+        elif classification == 'semi_finished_good':
+            qty = self._create_or_update_to_be_produced_line(
+                product, qty, source_product, source_qty, warehouse_groups, produced_data, config,
+            )
+
+            if product.id not in mo_bom_wise_data:
+                mo_bom_wise_data.update(self._get_bom_wise_mo_count(config, product))
+
+            self._explode_bom_into_tabs(
+                product, qty, component_data, produced_data, config,
+                by_product_data=by_product_data,
+                parent_product=product, warehouse_groups=warehouse_groups,
+                mo_bom_wise_data=mo_bom_wise_data,
+            )
+
+    def _get_bom_wise_mo_count(self, config, product_ids):
+        """Call get_product_mo_bom_wise once and return {product_id: {bom_id: mo_count}}.
+
+        Filters by company, FG/SFG products, their categories, and config warehouses.
+        """
+        if not self.sales_start_date or not self.sales_end_date:
+            return {}
+
+        if not product_ids:
+            return {}
+
+        company_ids = {self.company_id.id} if self.company_id else {}
+        products = set(product_ids.ids)
+        category_ids =  {}
+        warehouse_ids = self._get_warehouse_ids(config)
+        warehouses = set(warehouse_ids) if warehouse_ids else {}
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+
+        query = """
+            SELECT product_id, bom_id, mo_ids
+            FROM get_product_mo_bom_wise('%s', '%s', '%s', '%s', '%s', '%s', '%s')
+        """ % (company_ids, products, category_ids, warehouses, '{}', start_date, end_date)
+        self._cr.execute(query)
+        rows = self._cr.dictfetchall()
+
+        mo_bom_data = defaultdict(dict)
+        for row in rows:
+            product_id = row.get('product_id')
+            bom_id = row.get('bom_id')
+            if not product_id or not bom_id:
+                continue
+            mo_ids = row.get('mo_ids') or []
+            mo_bom_data[product_id][bom_id] = (
+                mo_bom_data[product_id].get(bom_id, 0) + len(mo_ids)
+            )
+        return dict(mo_bom_data)
+
+    def _get_bom_wise_demand_by_mo_ratio(self, product, quantity, mo_bom_wise_data=None):
+        """Split demand across BOMs using completed MO usage ratios.
+
+        Returns list of (bom, allocated_qty). Falls back to reorder/default BOM
+        when no completed MOs exist for the product in the period.
+        """
+        if quantity <= 0 or not product:
+            return []
+
+        bom_counts = (mo_bom_wise_data or {}).get(product.id, {})
+        total_mos = sum(bom_counts.values())
+        if not bom_counts or total_mos <= 0:
+            bom = self._get_product_bom(product)
+            return [(bom, quantity)] if bom else []
+
+        Bom = self.env['mrp.bom']
+        allocations = []
+        for bom_id, mo_count in bom_counts.items():
+            bom = Bom.browse(bom_id)
+            if not bom.exists():
+                continue
+
+            allocated_qty = quantity * (mo_count / total_mos)
+            allocated_qty = int(
+                Decimal(str(allocated_qty)).quantize(
+                    Decimal('1'),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            if allocated_qty > 0:
+                allocations.append((bom, allocated_qty))
+        return allocations
 
     def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
         """Collect by-product qty using parent MO qty × BOM ratio.
@@ -620,75 +768,6 @@ class AdvanceReorderOrderProcess(models.Model):
                 'quantity': qty,
             })
 
-    def _explode_bom_into_tabs(
-            self, product, quantity, component_data, produced_data, config,
-            bom=None, by_product_data=None,
-            parent_product=None, warehouse_groups=None,
-    ):
-        """Explode BOM using parent MO qty × BOM component ratios.
-
-        Case 1 (direct component): required_qty = parent_mo_qty × (bom_line_qty / bom_qty)
-        Case 2 (nested SFG): required_qty = root_mo_qty × fg_sfg_ratio × sfg_component_ratio
-        achieved by propagating exploded qty through recursive calls.
-        """
-        if quantity <= 0:
-            return
-
-        bom = bom or self._get_product_bom(product)
-        if not bom:
-            _logger.warning(
-                'No BOM configured for product %s (ID: %s) during MRP tab generation.',
-                product.display_name,
-                product.id,
-            )
-            return
-
-        bom_parent = parent_product or product
-        bom_qty = bom.product_qty or 1.0
-        for bom_line in bom.bom_line_ids:
-            component = bom_line.product_id
-            if not component:
-                continue
-            bom_required_qty = quantity * (bom_line.product_qty / bom_qty)
-            self._process_product_by_classification(
-                component, bom_required_qty, component_data, produced_data, config,
-                to_be_produced=True, by_product_data=by_product_data,
-                source_product=bom_parent, source_qty=bom_qty, warehouse_groups=warehouse_groups,
-            )
-
-    def _process_product_by_classification(
-            self, product, qty, component_data, produced_data, config,
-            to_be_produced=False, by_product_data=None, source_product=None, source_qty=0,
-            warehouse_groups=None,
-    ):
-        if not product or qty <= 0:
-            return
-
-        classification = product.reorder_product_classification
-
-        if classification == 'raw_material':
-            self._add_to_component_tab(component_data, product, qty, source_product, source_qty)
-        elif classification == 'semi_finished_good':
-            if to_be_produced:
-                if warehouse_groups is None:
-                    warehouse_groups = self.config_ids.mapped('warehouse_group_id')
-
-                qty = self._create_or_update_to_be_produced_line(
-                    product, qty, source_product, source_qty, warehouse_groups, produced_data, config,
-                )
-            self._collect_bom_by_products(product, qty, by_product_data)
-            self._explode_bom_into_tabs(
-                product, qty, component_data, produced_data, config,
-                by_product_data=by_product_data,
-                parent_product=product, warehouse_groups=warehouse_groups,
-            )
-        elif classification == 'finished_good':
-            self._collect_bom_by_products(product, qty, by_product_data)
-            self._explode_bom_into_tabs(
-                product, qty, component_data, produced_data, config,
-                by_product_data=by_product_data,
-                parent_product=product, warehouse_groups=warehouse_groups,
-            )
 
     def _add_to_component_tab(self, component_data, product, qty, source_product, source_qty):
         if not product or qty <= 0:
