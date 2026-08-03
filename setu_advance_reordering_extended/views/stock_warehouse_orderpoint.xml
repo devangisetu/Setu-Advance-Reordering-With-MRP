@@ -5,6 +5,14 @@
         <field name="model">stock.warehouse.orderpoint</field>
         <field name="inherit_id" ref="setu_advance_reordering.view_warehouse_orderpoint_form"/>
         <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('oe_title')]" position="before">
+                <div class="oe_button_box" name="button_box">
+                    <button class="oe_stat_button" icon="fa-chain" type="object" name="action_view_parent_orderpoints" invisible="not parent_orderpoint_count">
+                        <field string="Source Orderpoints" name="parent_orderpoint_count" widget="statinfo"/>
+                    </button>
+                </div>
+            </xpath>
+
             <xpath expr="//field[@name='add_iwt_in_lead_calc']" position="after">
                 <field name="add_mo_in_lead_calc"/>
                 <field name="subcontracting_enabled" invisible="1"/>
@@ -29,9 +37,9 @@
                 <field name="auto_create_components_orderpoint" widget="boolean_toggle" force_save="True"/>
             </xpath>
             <xpath expr="//notebook" position="replace">
-                <notebook invisible="parent_orderpoint_ids">
+                <notebook>
                     <!-- History Tabs -->
-                    <page string="Sales History" invisible="demand_planning_type == 'production_driven'">
+                    <page string="Sales History" invisible="demand_planning_type == 'production_driven' or parent_orderpoint_ids">
                         <field name="product_sales_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
@@ -47,7 +55,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Consumption History" invisible="demand_planning_type == 'sales_driven'">
+                    <page string="Consumption History" invisible="demand_planning_type == 'sales_driven' or parent_orderpoint_ids">
                         <field name="product_consumption_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
@@ -61,7 +69,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Resupply History" invisible="not subcontracting_enabled or demand_planning_type == 'sales_driven'">
+                    <page string="Resupply History" invisible="not subcontracting_enabled or demand_planning_type == 'sales_driven' or parent_orderpoint_ids">
                         <field name="product_resupply_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
@@ -76,7 +84,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Scrap History" invisible="not scrap_enabled">
+                    <page string="Scrap History" invisible="not scrap_enabled or parent_orderpoint_ids">
                         <field name="product_scrap_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
