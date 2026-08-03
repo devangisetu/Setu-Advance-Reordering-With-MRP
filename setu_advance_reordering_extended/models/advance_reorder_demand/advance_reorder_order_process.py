@@ -663,7 +663,7 @@ class AdvanceReorderOrderProcess(models.Model):
 
         elif classification == 'semi_finished_good':
             line, qty = self._create_or_update_to_be_produced_line(
-                product, qty, source_product, source_qty, warehouse_groups, produced_data, config,
+                product, qty, bom, source_product, source_qty, warehouse_groups, produced_data, config,
             )
 
             if product.id not in mo_bom_wise_data:
@@ -797,7 +797,7 @@ class AdvanceReorderOrderProcess(models.Model):
             })
         )
 
-    def _prepare_to_be_produced_line_vals(self, product, required_qty, source_product, source_qty, warehouse_groups,
+    def _prepare_to_be_produced_line_vals(self, product, required_qty,bom, source_product, source_qty, warehouse_groups,
                                           config):
         warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
         warehouse_qty = self._get_warehouse_qty_summary(
@@ -820,12 +820,14 @@ class AdvanceReorderOrderProcess(models.Model):
             'source_line_ids': [
                 (0, 0, {
                     'source_product_id': source_product.id,
-                    'source_qty': required_qty,
+                    'bom_id':bom.id,
+                    'source_qty': source_qty,
+                    'required_qty': required_qty,
                 })
             ],
         }
 
-    def _create_or_update_to_be_produced_line(self, product, qty, source_product, source_qty, warehouse_groups,
+    def _create_or_update_to_be_produced_line(self, product, qty, bom, source_product, source_qty, warehouse_groups,
                                               produced_data, config):
         """Create a to-be-produced line when an SFG is found; update if the same SFG appears again."""
         ProducedLine = self.env['advance.reorder.to.be.produced.line']
@@ -849,13 +851,15 @@ class AdvanceReorderOrderProcess(models.Model):
                 'source_line_ids': [
                     (0, 0, {
                         'source_product_id': source_product.id,
-                        'source_qty': qty,
+                        'bom_id': bom.id,
+                        'source_qty': source_qty,
+                        'required_qty': qty,
                     })
                 ],
             })
             return match_line, required_qty
 
-        vals = self._prepare_to_be_produced_line_vals(product, qty, source_product, source_qty, warehouse_groups,
+        vals = self._prepare_to_be_produced_line_vals(product, qty, bom, source_product, source_qty, warehouse_groups,
                                                       config)
         produced_line = ProducedLine.create(vals)
         return produced_line, produced_line.net_demand
