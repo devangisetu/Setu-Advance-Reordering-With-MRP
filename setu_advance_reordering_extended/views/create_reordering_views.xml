@@ -42,8 +42,16 @@
             <xpath expr="//field[@name='average_sale_calculation_base']" position="after">
                 <field name="demand_planning_type" invisible="operation != 'orderpoint'"/>
             </xpath>
-            <xpath expr="//field[@name='consider_current_period_sales']" position="after">
+            <xpath expr="//field[@name='location_selection_strategy']" position="after">
+                <separator string="Auto Orderpoint" invisible="operation != 'orderpoint'" style="margin-top: 25px; font-size: 18px;"/>
                 <field name="auto_create_components_orderpoint" widget="boolean_toggle" invisible="operation != 'orderpoint'"/>
+                <field name="update_component_orderpoint" widget="boolean_toggle" invisible="operation != 'orderpoint'"/>
+            </xpath>
+            <xpath expr="//field[@name='product_ids']" position="before">
+                <field name="product_domain_ids" invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='product_ids']" position="attributes">
+                <attribute name="domain">[('id', 'in', product_domain_ids), ('type', '!=', 'combo')]</attribute>
             </xpath>
         </field>
     </record>

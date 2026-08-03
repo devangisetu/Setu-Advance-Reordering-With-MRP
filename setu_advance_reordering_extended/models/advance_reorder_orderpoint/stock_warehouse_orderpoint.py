@@ -75,13 +75,25 @@ class StockWarehouseOrderpoint(models.Model):
         'stock_warehouse_orderpoint_parent_rel',
         'child_orderpoint_id',
         'parent_orderpoint_id',
-        string="Parent Product Orderpoints",
+        string="Source Product Orderpoints",
         domain="[('id', 'in', parent_orderpoint_domain_ids)]"
     )
     parent_orderpoint_domain_ids = fields.Many2many(
         'stock.warehouse.orderpoint',
         compute="_compute_parent_orderpoint_domain_ids",
         string="Parent Orderpoints Domain Helper"
+    )
+
+    parent_orderpoint_count = fields.Integer(
+        compute="_compute_parent_orderpoint_count",
+        string="Source Orderpoint Count"
+    )
+
+    reorder_bom_id = fields.Many2one(
+        'mrp.bom',
+        related='product_id.reorder_bom_id',
+        string='Reorder BOM',
+        readonly=True
     )
 
     consider_current_period_sales = fields.Boolean(
@@ -110,6 +122,18 @@ class StockWarehouseOrderpoint(models.Model):
                 rec.display_name = f"{rec.product_id.display_name} - {rec.warehouse_id.name}"
             else:
                 super(StockWarehouseOrderpoint, rec)._compute_display_name()
+
+    @api.depends('parent_orderpoint_ids')
+    def _compute_parent_orderpoint_count(self):
+        for rec in self:
+            rec.parent_orderpoint_count = len(rec.parent_orderpoint_ids)
+
+    def action_view_parent_orderpoints(self):
+        self.ensure_one()
+        action = self.env["ir.actions.actions"]._for_xml_id("stock.action_orderpoint")
+        action['domain'] = [('id', 'in', self.parent_orderpoint_ids.ids)]
+        action['context'] = {'create': False}
+        return action
 
     def _compute_subcontracting_enabled(self):
         setting = self.env['advance.reordering.settings'].search([], limit=1)
@@ -435,6 +459,15 @@ class StockWarehouseOrderpoint(models.Model):
                         ratio = bom_line.product_qty / bom_qty
                         min_qty += (parent_op.suggested_min_qty or 0.0) * ratio
                         max_qty += (parent_op.suggested_max_qty or 0.0) * ratio
+            
+            history_context = self._context.get('already_calculated_history', False)
+            if not history_context:
+                self.update_product_purchase_history()
+                self.update_product_iwt_history()
+                self.update_product_production_history()
+                self.update_product_subcontract_history()
+            self._calculate_lead_time()
+
             self.write({
                 'suggested_min_qty': round(min_qty, 2),
                 'suggested_max_qty': round(max_qty, 2),

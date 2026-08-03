@@ -62,6 +62,36 @@ class CreateReordering(models.TransientModel):
         ('combined', 'Combined')
     ], string="Demand Planning Type", default="sales_driven")
 
+    update_component_orderpoint = fields.Boolean(
+        "Update Component Orderpoint",
+        default=False,
+        help="If enabled, product selection will only show products whose orderpoints have no parent product orderpoints."
+    )
+    product_domain_ids = fields.Many2many(
+        'product.product',
+        compute='_compute_product_domain_ids',
+        string='Product Domain Helper'
+    )
+
+    @api.depends('update_component_orderpoint')
+    def _compute_product_domain_ids(self):
+        for wizard in self:
+            if not wizard.update_component_orderpoint:
+                ops_with_parents = self.env['stock.warehouse.orderpoint'].search([
+                    ('parent_orderpoint_ids', '!=', False)
+                ])
+                excluded_product_ids = ops_with_parents.mapped('product_id').ids
+                wizard.product_domain_ids = self.env['product.product'].search([
+                    ('id', 'not in', excluded_product_ids)
+                ])
+            else:
+                wizard.product_domain_ids = self.env['product.product'].search([])
+
+
+    def _filter_wizard_products(self):
+        self.product_ids = self.product_domain_ids
+
+
     def _default_subcontracting_enabled(self):
         setting = self.env['advance.reordering.settings'].search([], limit=1)
         return setting.subcontracting_enabled if setting else False
@@ -81,11 +111,16 @@ class CreateReordering(models.TransientModel):
     )
 
     def perform_operation(self):
+        self._filter_wizard_products()
         self = self.with_context(
             wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
             wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
         )
         return super().perform_operation()
+
+    def prepare_orderpoint_domain(self):
+        self._filter_wizard_products()
+        return super().prepare_orderpoint_domain()
 
     def _update_orderpoint_planning_type(self, orderpoints):
         if not orderpoints:
