@@ -23,6 +23,7 @@
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
                 <field name="demand_planning_type"/>
+                <field name="reorder_bom_id" readonly="1" invisible="not reorder_bom_id"/>
                 <field name="parent_orderpoint_domain_ids" invisible="1"/>
                 <field name="parent_orderpoint_ids" widget="many2many_tags" options="{'no_create': True, 'no_edit': True}"/>
                 <div class="alert alert-warning text-center" role="alert" style="margin-top: 10px; margin-bottom: 10px; grid-column: span 2;" invisible="not warehouse_changed">
