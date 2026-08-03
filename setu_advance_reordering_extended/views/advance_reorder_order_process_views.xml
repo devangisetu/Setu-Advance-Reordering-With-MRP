@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
             <list string="FG Demand Calculation" create="false" edit="false" delete="false">
                 <field name="product_id"/>
-                <field name="demanded_qty" string="Demand"/>
+                <field name="demand_adjustment_qty" string="Demand"/>
             </list>
         </field>
     </record>

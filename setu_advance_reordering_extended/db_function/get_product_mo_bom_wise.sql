@@ -2,14 +2,6 @@ DROP FUNCTION IF EXISTS public.get_product_mo_bom_wise(
     integer[],
     integer[],
     integer[],
-    date,
-    date
-);
-
-DROP FUNCTION IF EXISTS public.get_product_mo_bom_wise(
-    integer[],
-    integer[],
-    integer[],
     integer[],
     integer[],
     date,
@@ -26,6 +18,7 @@ CREATE OR REPLACE FUNCTION public.get_product_mo_bom_wise(
     IN end_date date
 )
 RETURNS TABLE(
+    warehouse_id integer,
     product_id integer,
     bom_id integer,
     mo_ids integer[]
@@ -36,6 +29,7 @@ BEGIN
 
 RETURN QUERY
 SELECT
+    sl.warehouse_id,
     mp.product_id,
     mp.bom_id,
     ARRAY_AGG(mp.id ORDER BY mp.id) AS mo_ids
@@ -45,12 +39,12 @@ INNER JOIN product_product pp
     ON pp.id = mp.product_id
 INNER JOIN product_template pt
     ON pt.id = pp.product_tmpl_id
-LEFT JOIN stock_picking_type spt
-    ON spt.id = mp.picking_type_id
+LEFT JOIN stock_location sl
+    on sl.id = mp.location_src_id
 
 WHERE
-    mp.state != 'cancel'
-    AND mp.date_start::date BETWEEN start_date AND end_date
+    mp.state = 'done'
+    AND (sl.is_subcontracting_location IS FALSE OR sl.is_subcontracting_location IS NULL)
 
     AND (
         company_ids IS NULL
@@ -73,7 +67,7 @@ WHERE
     AND (
         warehouse_ids IS NULL
         OR warehouse_ids = '{}'
-        OR spt.warehouse_id = ANY(warehouse_ids)
+        OR sl.warehouse_id = ANY(warehouse_ids)
     )
 
     AND (
@@ -83,6 +77,7 @@ WHERE
     )
 
 GROUP BY
+    sl.warehouse_id,
     mp.product_id,
     mp.bom_id;
 

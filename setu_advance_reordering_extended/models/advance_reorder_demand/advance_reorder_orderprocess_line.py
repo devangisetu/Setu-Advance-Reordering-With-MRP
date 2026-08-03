@@ -21,3 +21,5 @@ class AdvanceReorderOrderprocessLine(models.Model):
     resupply_qty = fields.Float(string='Resupply Qty',)
     resupply_return_qty = fields.Float(string='Resupply Return Qty',)
     scrap_qty = fields.Float(string='Scraped Qty',)
+    config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
+                                string='Reorder configuration', help="Reorder configuration")

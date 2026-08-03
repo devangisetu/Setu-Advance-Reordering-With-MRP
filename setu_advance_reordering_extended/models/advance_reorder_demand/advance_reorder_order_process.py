@@ -415,6 +415,7 @@ class AdvanceReorderOrderProcess(models.Model):
         )
         moves = self.get_stock_move(product, config)
         return {
+            'config_id': config.id,
             'warehouse_group_id': config.warehouse_group_id.id,
             'reorder_process_id': self.id,
             'product_id': product.id,
@@ -529,12 +530,12 @@ class AdvanceReorderOrderProcess(models.Model):
         self.write(reorder_vals)
         self.invalidate_recordset(['line_ids'])
         if self.line_ids:
-            component_data, by_product_data, warehouse_groups = self._collect_mrp_tab_requirements(config)
+            component_data, by_product_data, warehouse_groups = self._collect_mrp_tab_requirements()
             self._generate_component_demand_lines(config, component_data, warehouse_groups, )
             self._generate_by_product_lines(by_product_data)
         return True
 
-    def _collect_mrp_tab_requirements(self, config):
+    def _collect_mrp_tab_requirements(self,):
         self.to_be_produced_line_ids.unlink()
         produced_data = defaultdict(float)
         component_data = defaultdict(
@@ -547,43 +548,44 @@ class AdvanceReorderOrderProcess(models.Model):
         warehouse_groups = self.config_ids.mapped('warehouse_group_id')
         use_bom = self.calculate_demand_based_on == 'bom'
 
-        # Prefetch MO BOM-wise data once for without-BOM mode (covers FG + nested SFG).
-        mo_bom_wise_data = {}
-        if not use_bom:
-            product_ids = self.line_ids.filtered(
-                lambda line: (
-                        line.demand_adjustment_qty > 0
-                        and line.product_id.reorder_product_classification in (
-                            'finished_good',
-                            'semi_finished_good',
+        for config in self.config_ids:
+            lines = self.line_ids.filtered(lambda x: x.config_id.id == config.id)
+            mo_bom_wise_data = {}
+            for line in lines:
+                if not use_bom:
+                    product_ids = lines.filtered(
+                        lambda line: (
+                                line.demand_adjustment_qty > 0
+                                and line.product_id.reorder_product_classification in (
+                                    'finished_good',
+                                    'semi_finished_good',
+                                )
                         )
-                )
-            ).mapped('product_id')
-            mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
+                    ).mapped('product_id')
+                    mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
 
-        for line in self.line_ids:
-            product = line.product_id
-            qty = line.demand_adjustment_qty
-            if qty <= 0 or product.is_kit_product:
-                continue
-            if use_bom and not product.reorder_bom_id:
-                continue
-            if not use_bom and not product.bom_ids:
-                continue
+                product = line.product_id
+                qty = line.demand_adjustment_qty
+                if qty <= 0 or product.is_kit_product:
+                    continue
+                if use_bom and not product.reorder_bom_id:
+                    continue
+                if not use_bom and not product.bom_ids:
+                    continue
 
-            classification = product.reorder_product_classification
-            if classification in ('finished_good', 'semi_finished_good'):
-                self._explode_bom_into_tabs(
-                    product,
-                    qty,
-                    component_data,
-                    produced_data,
-                    config,
-                    by_product_data=by_product_data,
-                    parent_product=product,
-                    warehouse_groups=warehouse_groups,
-                    mo_bom_wise_data=mo_bom_wise_data,
-                )
+                classification = product.reorder_product_classification
+                if classification in ('finished_good', 'semi_finished_good'):
+                    self._explode_bom_into_tabs(
+                        product,
+                        qty,
+                        component_data,
+                        produced_data,
+                        config,
+                        by_product_data=by_product_data,
+                        parent_product=product,
+                        warehouse_groups=warehouse_groups,
+                        mo_bom_wise_data=mo_bom_wise_data,
+                    )
         return dict(component_data), by_product_data, warehouse_groups
 
 
@@ -628,14 +630,14 @@ class AdvanceReorderOrderProcess(models.Model):
                 required_qty = current_qty * (bom_line.product_qty / bom_qty)
 
                 self._process_product_by_classification(
-                    component, required_qty, component_data, produced_data, config,
+                    component, required_qty, component_data, produced_data, config, current_bom,
                     by_product_data=by_product_data,
-                    source_product=bom_parent, source_qty=bom_qty,
+                    source_product=bom_parent, source_qty=current_qty,
                     warehouse_groups=warehouse_groups, mo_bom_wise_data=mo_bom_wise_data,
                 )
 
     def _process_product_by_classification(
-            self, product, qty, component_data, produced_data, config,
+            self, product, qty, component_data, produced_data, config, bom,
             by_product_data=None, source_product=None, source_qty=0,
             warehouse_groups=None, mo_bom_wise_data=None,
     ):
@@ -646,7 +648,7 @@ class AdvanceReorderOrderProcess(models.Model):
         mo_bom_wise_data = mo_bom_wise_data or {}
 
         if classification == 'raw_material':
-            self._add_to_component_tab(component_data, product, qty, source_product, source_qty)
+            self._add_to_component_tab(component_data, product, qty, bom, source_product, source_qty)
 
         elif classification == 'semi_finished_good':
             qty = self._create_or_update_to_be_produced_line(
@@ -769,18 +771,18 @@ class AdvanceReorderOrderProcess(models.Model):
             })
 
 
-    def _add_to_component_tab(self, component_data, product, qty, source_product, source_qty):
+    def _add_to_component_tab(self, component_data, product, qty, bom, source_product, source_qty):
         if not product or qty <= 0:
             return
 
         component = component_data[product.id]
-
         component['qty'] += qty
-
         component['source_line_ids'].append(
             (0, 0, {
                 'source_product_id': source_product.id,
-                'source_qty': qty,
+                'bom_id':bom.id,
+                'source_qty': source_qty,
+                'required_qty': qty,
             })
         )
 
