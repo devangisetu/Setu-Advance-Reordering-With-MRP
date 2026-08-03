@@ -530,13 +530,13 @@ class AdvanceReorderOrderProcess(models.Model):
         self.write(reorder_vals)
         self.invalidate_recordset(['line_ids'])
         if self.line_ids:
-            component_data, by_product_data, warehouse_groups = self._collect_mrp_tab_requirements()
-            self._generate_component_demand_lines(config, component_data, warehouse_groups, )
-            self._generate_by_product_lines(by_product_data)
+            self.to_be_produced_line_ids.unlink()
+            self.component_demand_line_ids.unlink()
+            self.by_product_line_ids.unlink()
+            self._collect_mrp_tab_requirements()
         return True
 
     def _collect_mrp_tab_requirements(self,):
-        self.to_be_produced_line_ids.unlink()
         produced_data = defaultdict(float)
         component_data = defaultdict(
             lambda: {
@@ -566,10 +566,18 @@ class AdvanceReorderOrderProcess(models.Model):
 
                 product = line.product_id
                 qty = line.demand_adjustment_qty
+
                 if qty <= 0 or product.is_kit_product:
                     continue
+
                 if use_bom and not product.reorder_bom_id:
+                    _logger.warning(
+                        "Reorder BOM not found for product '%s' (ID: %s). Skipping demand generation.",
+                        product.display_name,
+                        product.id,
+                    )
                     continue
+
                 if not use_bom and not product.bom_ids:
                     continue
 
@@ -586,7 +594,10 @@ class AdvanceReorderOrderProcess(models.Model):
                         warehouse_groups=warehouse_groups,
                         mo_bom_wise_data=mo_bom_wise_data,
                     )
-        return dict(component_data), by_product_data, warehouse_groups
+
+            component_data =  dict(component_data)
+            self._generate_component_demand_lines(config, component_data, warehouse_groups, )
+            self._generate_by_product_lines(by_product_data)
 
 
     def _explode_bom_into_tabs(
@@ -604,7 +615,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 mo_bom_wise_data=mo_bom_wise_data,
             )
         else:
-            default_bom = self._get_product_bom(product)
+            default_bom = bom or self._get_product_bom(product)
             bom_allocations = [(default_bom, quantity)] if default_bom else []
 
         if not bom_allocations:
@@ -651,7 +662,7 @@ class AdvanceReorderOrderProcess(models.Model):
             self._add_to_component_tab(component_data, product, qty, bom, source_product, source_qty)
 
         elif classification == 'semi_finished_good':
-            qty = self._create_or_update_to_be_produced_line(
+            line, qty = self._create_or_update_to_be_produced_line(
                 product, qty, source_product, source_qty, warehouse_groups, produced_data, config,
             )
 
@@ -659,7 +670,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 mo_bom_wise_data.update(self._get_bom_wise_mo_count(config, product))
 
             self._explode_bom_into_tabs(
-                product, qty, component_data, produced_data, config,
+                product, qty, component_data, produced_data, config, line.bom_id,
                 by_product_data=by_product_data,
                 parent_product=product, warehouse_groups=warehouse_groups,
                 mo_bom_wise_data=mo_bom_wise_data,
@@ -797,6 +808,7 @@ class AdvanceReorderOrderProcess(models.Model):
             'reorder_process_id': self.id,
             'config_id': config.id,
             'product_id': product.id,
+            'bom_id': product.reorder_bom_id.id or product.get_default_bom().id,
             'available_qty': warehouse_qty['available'],
             'required_qty': required_qty,
             'incoming_qty': warehouse_qty['incoming'],
@@ -841,18 +853,15 @@ class AdvanceReorderOrderProcess(models.Model):
                     })
                 ],
             })
-            return required_qty
+            return match_line, required_qty
 
         vals = self._prepare_to_be_produced_line_vals(product, qty, source_product, source_qty, warehouse_groups,
                                                       config)
         produced_line = ProducedLine.create(vals)
-        return produced_line.net_demand
+        return produced_line, produced_line.net_demand
 
     def _generate_component_demand_lines(self, config, component_data=None,
                                          warehouse_groups=None, ):
-        self.component_demand_line_ids.unlink()
-        if component_data is None or warehouse_groups is None:
-            component_data, _, warehouse_groups = self._collect_mrp_tab_requirements()
         if not component_data:
             return
 
@@ -878,9 +887,6 @@ class AdvanceReorderOrderProcess(models.Model):
             })
 
     def _generate_by_product_lines(self, by_product_data=None):
-        self.by_product_line_ids.unlink()
-        if by_product_data is None:
-            _, by_product_data, _ = self._collect_mrp_tab_requirements()
         if not by_product_data:
             return
 

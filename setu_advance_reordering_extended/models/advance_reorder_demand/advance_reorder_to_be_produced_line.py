@@ -48,8 +48,6 @@ class AdvanceReorderToBeProducedLine(models.Model):
     bom_id = fields.Many2one(
         'mrp.bom',
         string='Reorder BOM',
-        compute='_compute_bom_id',
-        store=True,
         domain="['|', ('product_id', '=', id), '&', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False), ('active', '=', True)]",
         help='BOM used for MRP component demand calculation.',
     )
@@ -73,28 +71,11 @@ class AdvanceReorderToBeProducedLine(models.Model):
     config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
                                  string='Reorder configuration', help="Reorder configuration")
 
-    @api.depends('product_id')
-    def _compute_bom_id(self):
-        for record in self:
-            record.bom_id = record.product_id.get_default_bom() if record.product_id else False
 
     @api.depends('bom_id', 'bom_id.type')
     def _compute_bom_type(self):
         for record in self:
             record.bom_type = self.env['product.product'].get_bom_type(record.bom_id)
-
-    @api.depends('bom_id', 'bom_id.type')
-    def _compute_reorder_bom_type(self):
-        for product in self:
-            bom = product.bom_id
-            if not bom:
-                product.reorder_bom_type = False
-            elif bom.type == 'subcontract':
-                product.reorder_bom_type = 'subcontract'
-            elif bom.type == 'phantom':
-                product.reorder_bom_type = 'kit'
-            else:
-                product.reorder_bom_type = 'normal'
 
 
     def action_incoming_stock_moves(self):
