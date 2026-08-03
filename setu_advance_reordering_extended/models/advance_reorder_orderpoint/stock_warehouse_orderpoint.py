@@ -89,6 +89,13 @@ class StockWarehouseOrderpoint(models.Model):
         string="Source Orderpoint Count"
     )
 
+    reorder_bom_id = fields.Many2one(
+        'mrp.bom',
+        related='product_id.reorder_bom_id',
+        string='Reorder BOM',
+        readonly=True
+    )
+
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
         help='Consider current period data in the calculation history'
