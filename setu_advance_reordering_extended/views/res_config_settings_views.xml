@@ -23,25 +23,25 @@
             <xpath expr="//block[@name='advance_reordering_with_orderpoint']" position="inside">
                 <setting string="Scrap"
                          help="If enabled, scrap history tab will be visible on the reordering rules form view.">
-                    <field name="scrap_enabled"/>
+                    <field name="use_scrap_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontracting"
                          help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view.">
-                    <field name="subcontracting_enabled"/>
+                    <field name="use_subcontracting_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontract Lead Calculation"
                          help="Select whether lead time should be based on subcontractor lead time, actual subcontract history receipt, or static days."
-                         invisible="not subcontracting_enabled">
+                         invisible="not use_subcontracting_for_orderpoint">
                     <field name="subcontract_lead_calc_base_on"/>
                 </setting>
                 <setting string="Subcontract Maximum Lead Days Calculation"
                          help="Method for Maximum Lead Days calculation: Actual Maximum Lead Time or Average + Extra Time."
-                         invisible="not subcontracting_enabled or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time']">
+                         invisible="not use_subcontracting_for_orderpoint or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time']">
                     <field name="subcontract_max_lead_days_calc_method"/>
                 </setting>
                 <setting string="Subcontract Extra Lead Percentage"
                          help="Extra Percentage for Maximum Lead time of subcontract."
-                         invisible="not subcontracting_enabled or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time'] or subcontract_max_lead_days_calc_method != 'avg_extra_percentage'">
+                         invisible="not use_subcontracting_for_orderpoint or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time'] or subcontract_max_lead_days_calc_method != 'avg_extra_percentage'">
                     <field name="subcontract_extra_lead_percentage" widget="percentage"/>
                 </setting>
             </xpath>

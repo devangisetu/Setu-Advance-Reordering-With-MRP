@@ -13,13 +13,12 @@ class CreateReordering(models.TransientModel):
             ('production_history', 'Production Orders'),
             ('consumption_history', 'Consumption History'),
         ]
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        if setting and setting.subcontracting_enabled:
+        if self.company_id.use_subcontracting_for_orderpoint:
             options.extend([
                 ('resupply_history', 'Resupply History'),
                 ('subcontract_history', 'Subcontracting Orders'),
             ])
-        if setting and setting.scrap_enabled:
+        if self.company_id.use_scrap_for_orderpoint:
             options.append(('scrap_history', 'Scrap History'))
         return options
 
@@ -37,8 +36,7 @@ class CreateReordering(models.TransientModel):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        if setting and setting.subcontracting_enabled:
+        if self.company_id.use_subcontracting_for_orderpoint:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 
@@ -91,22 +89,13 @@ class CreateReordering(models.TransientModel):
     def _filter_wizard_products(self):
         self.product_ids = self.product_domain_ids
 
-
-    def _default_subcontracting_enabled(self):
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        return setting.subcontracting_enabled if setting else False
-
-    subcontracting_enabled = fields.Boolean(
-        default=_default_subcontracting_enabled,
+    use_subcontracting_for_orderpoint = fields.Boolean(
+        default=lambda self: self.env.company.use_subcontracting_for_orderpoint,
         string="Subcontracting Enabled"
     )
 
-    def _default_scrap_enabled(self):
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        return setting.scrap_enabled if setting else False
-
-    scrap_enabled = fields.Boolean(
-        default=_default_scrap_enabled,
+    use_scrap_for_orderpoint = fields.Boolean(
+        default=lambda self: self.env.company.use_scrap_for_orderpoint,
         string="Scrap Enabled"
     )
 

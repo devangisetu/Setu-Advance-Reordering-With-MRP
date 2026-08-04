@@ -16,8 +16,8 @@
                         class="oe_highlight"/>
             </xpath>
             <xpath expr="//button[@name='update_iwt_history']" position="after">
-                <field name="subcontracting_enabled" invisible="1"/>
-                <field name="scrap_enabled" invisible="1"/>
+                <field name="use_subcontracting_for_orderpoint" invisible="1"/>
+                <field name="use_scrap_for_orderpoint" invisible="1"/>
                 <button name="update_production_history" string="Update Production Orders"
                         invisible="operation != 'production_history'" type="object"
                         class="oe_highlight"/>
@@ -36,8 +36,8 @@
             </xpath>
             <xpath expr="//field[@name='add_iwt_in_lead_calc']" position="after">
                 <field name="add_mo_in_lead_calc" invisible="operation != 'orderpoint'"/>
-                <field name="subcontracting_enabled" invisible="1"/>
-                <field name="add_sc_in_lead_calc" invisible="operation != 'orderpoint' or not subcontracting_enabled"/>
+                <field name="use_subcontracting_for_orderpoint" invisible="1"/>
+                <field name="add_sc_in_lead_calc" invisible="operation != 'orderpoint' or not use_subcontracting_for_orderpoint"/>
             </xpath>
             <xpath expr="//field[@name='average_sale_calculation_base']" position="after">
                 <field name="demand_planning_type" invisible="operation != 'orderpoint'"/>

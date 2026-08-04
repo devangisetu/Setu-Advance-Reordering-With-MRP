@@ -20,18 +20,18 @@ class ResConfigSettings(models.TransientModel):
         readonly=False,
     )
 
-    subcontracting_enabled = fields.Boolean(
-        related='company_id.subcontracting_enabled',
+    use_subcontracting_for_orderpoint = fields.Boolean(
+        related='company_id.use_subcontracting_for_orderpoint',
         string="Subcontracting",
-        help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view.",
+        help="Include subcontracting in lead time calculation.",
         store=True,
         readonly=False,
     )
 
-    scrap_enabled = fields.Boolean(
-        related='company_id.scrap_enabled',
+    use_scrap_for_orderpoint = fields.Boolean(
+        related='company_id.use_scrap_for_orderpoint',
         string="Scrap",
-        help="If enabled, scrap history tab will be visible on the reordering rules form view.",
+        help="Include scrap in daily demand calculation.",
         store=True,
         readonly=False,
     )

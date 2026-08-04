@@ -21,7 +21,7 @@ class StockWarehouseOrderpoint(models.Model):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        if self.company_id and self.company_id.subcontracting_enabled:
+        if self.company_id and self.company_id.use_subcontracting_for_orderpoint:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 
@@ -46,11 +46,11 @@ class StockWarehouseOrderpoint(models.Model):
     average_sale_calculation_base = fields.Selection(string="Get Average Data From")
     max_daily_sale_qty = fields.Float("Maximum Daily Demand")
 
-    subcontracting_enabled = fields.Boolean(
+    use_subcontracting_for_orderpoint = fields.Boolean(
         compute="_compute_subcontracting_enabled",
         string="Subcontracting Enabled in Settings"
     )
-    scrap_enabled = fields.Boolean(
+    use_scrap_for_orderpoint = fields.Boolean(
         compute="_compute_scrap_enabled",
         string="Scrap Enabled in Settings"
     )
@@ -135,14 +135,12 @@ class StockWarehouseOrderpoint(models.Model):
         return action
 
     def _compute_subcontracting_enabled(self):
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        enabled = setting.subcontracting_enabled if setting else False
+        enabled = self.company_id.use_subcontracting_for_orderpoint or False
         for op in self:
             op.subcontracting_enabled = enabled
 
     def _compute_scrap_enabled(self):
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        enabled = setting.scrap_enabled if setting else False
+        enabled = self.company_id.use_scrap_for_orderpoint or False
         for op in self:
             op.scrap_enabled = enabled
 
@@ -203,9 +201,9 @@ class StockWarehouseOrderpoint(models.Model):
             max_daily_qtys += consumption_data.mapped('maximum_daily_consumption')
             max_daily_qtys += resupply_data.mapped('maximum_daily_resupply')
         avg_sale = sales_qty_sum / number_of_sales_days if sales_qty_sum > 0 else 0.0
-        calc_method = self.env['advance.reordering.settings'].search([]).max_sales_calc_method
+        calc_method = self.company_id.max_sales_calc_method
         if calc_method == 'avg_extra_percentage':
-            extra_percentage = float(self.env['advance.reordering.settings'].search([]).extra_sales_percentage or 0.0) + 1.0
+            extra_percentage = float(self.company_id.extra_sales_percentage or 0.0) + 1.0
             max_sale = avg_sale * extra_percentage
         else:
             max_sale = max(max_daily_qtys) if max_daily_qtys else 0.0
@@ -301,13 +299,12 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def _calculate_lead_time(self):
-        settings = self.env['advance.reordering.settings'].search([], limit=1)
-        purchase_base = settings.purchase_lead_calc_base_on if settings else 'vendor_lead_time'
-        subcontract_base = settings.subcontract_lead_calc_base_on if settings else 'vendor_lead_time'
-        purchase_calc_method = settings.max_lead_days_calc_method if settings else 'max_lead_days'
-        purchase_extra_percentage = float(settings.extra_lead_percentage or 0.0) + 1.0 if settings else 1.0
-        subcontract_calc_method = settings.subcontract_max_lead_days_calc_method if settings else 'max_lead_days'
-        subcontract_extra_percentage = float(settings.subcontract_extra_lead_percentage or 0.0) + 1.0 if settings else 1.0
+        purchase_base = self.company_id.purchase_lead_calc_base_on or 'vendor_lead_time'
+        subcontract_base = self.company_id.subcontract_lead_calc_base_on or 'vendor_lead_time'
+        purchase_calc_method = self.company_id.max_lead_days_calc_method or 'max_lead_days'
+        purchase_extra_percentage = float(self.company_id.extra_lead_percentage or 0.0) + 1.0 or 1.0
+        subcontract_calc_method = self.company_id.subcontract_max_lead_days_calc_method or 'max_lead_days'
+        subcontract_extra_percentage = float(self.company_id.subcontract_extra_lead_percentage or 0.0) + 1.0 or 1.0
         for orderpoint in self:
             source_averages = []
             max_lead_times = []
