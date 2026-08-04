@@ -791,7 +791,7 @@ class AdvanceReorderOrderProcess(models.Model):
             })
         )
 
-    def _prepare_to_be_produced_line_vals(self, product, required_qty,bom, source_product, source_qty, warehouse_groups,
+    def _prepare_to_be_produced_line_vals(self, product, required_qty, bom, source_product, source_qty, warehouse_groups,
                                           config):
         warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
         warehouse_qty = self._get_warehouse_qty_summary(
@@ -801,6 +801,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return {
             'reorder_process_id': self.id,
             'config_id': config.id,
+            'warehouse_group_id': config.warehouse_group_id.id,
             'product_id': product.id,
             'bom_id': product.reorder_bom_id.id or product.get_default_bom().id,
             'available_qty': warehouse_qty['available'],
@@ -871,10 +872,10 @@ class AdvanceReorderOrderProcess(models.Model):
                 product, self.env['stock.warehouse'].browse(warehouse_ids)
             )
             qty = bom_required_qty.get('qty')
-            scrap_data = self.get_scrap_data(config, product, )
+            scrap_data = self.get_scrap_data(config, product,)
             ComponentLine.create({
                 'reorder_process_id': self.id,
-                'config_id': config.id,
+                'warehouse_group_id': config.warehouse_group_id.id,
                 'product_id': product_id,
                 'available_qty': warehouse_qty['available'],
                 'required_qty': qty,
@@ -895,7 +896,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
             ByProductLine.create({
                 'reorder_process_id': self.id,
-                'config_id': config.id,
+                'warehouse_group_id': config.warehouse_group_id.id,
                 'product_id': entry['product_id'],
                 'source_product_id': entry.get('source_product_id'),
                 'source_product_demand': entry.get('source_product_demand', 0.0),
