@@ -147,7 +147,7 @@ class AdvanceReorderPlanner(models.Model):
         else:
             for product_id in product_ids:
                 seller = product_id.with_context({'sort_by': self.vendor_selection_strategy,
-                                                  'op_company': self.user_id.company_id})._select_seller(
+                                                  'op_company': self.company_id})._select_seller(
                     quantity=None)
                 if not seller or not seller.partner_id:
                     continue
