@@ -153,6 +153,7 @@
                     <field name="component_demand_line_ids" nolabel="1"
                            readonly="state in ['done', 'cancel', 'verified']">
                         <list string="Component Demand" create="false" delete="false">
+                            <field name="config_id" column_invisible="1"/>
                             <field name="product_id" readonly="1"/>
                             <field name="available_qty" readonly="1"/>
                             <field name="required_qty" readonly="1"/>
@@ -190,6 +191,7 @@
                       invisible="not by_product_line_ids">
                     <field name="by_product_line_ids" nolabel="1" readonly="1">
                         <list string="By Product" create="false" delete="false">
+                            <field name="config_id" column_invisible="1"/>
                             <field name="source_product_id"/>
                             <field name="source_product_demand"/>
                             <field name="product_id"/>

@@ -43,6 +43,9 @@ class AdvanceReorderComponentDemandLine(models.Model):
         string='Source Products',
     )
 
+    config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
+                                string='Reorder configuration', help="Reorder configuration")
+
     def action_incoming_stock_moves(self):
         self.ensure_one()
         warehouse_groups = self.reorder_process_id.config_ids.mapped('warehouse_group_id')

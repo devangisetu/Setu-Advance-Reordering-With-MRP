@@ -20,3 +20,5 @@ class AdvanceReorderByProductLine(models.Model):
     quantity = fields.Float(string='Expected Quantity',
         help='By-product quantity: parent MO qty × (BOM by-product qty / BOM qty).',
     )
+    config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
+                                string='Reorder configuration', help="Reorder configuration")

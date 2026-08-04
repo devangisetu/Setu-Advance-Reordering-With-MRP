@@ -326,6 +326,9 @@ class AdvanceReorderOrderProcess(models.Model):
         ADS is calculated as the average of the available ADS values.
         """
 
+        if not any((sales_data, production_data, resupply_data, scrap_data)):
+            return []
+
         # Create lookup dictionaries
         sales_map = {r['product_id']: r for r in sales_data}
         production_map = {r['product_id']: r for r in production_data}
@@ -516,7 +519,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id
             )
             sales_data = self.get_sales_data(config, line_product_ids,)
-            if self.generate_demand_with == 'history_sales':
+            if self.generate_demand_with == 'history_sales' and line_product_ids:
                 production_data = self.get_production_data(config, line_product_ids)
                 scrap_data = self.get_scrap_data(config, line_product_ids, )
                 resupply_data = self.get_resupply_data(config, line_product_ids)
@@ -551,34 +554,33 @@ class AdvanceReorderOrderProcess(models.Model):
         for config in self.config_ids:
             lines = self.line_ids.filtered(lambda x: x.config_id.id == config.id)
             mo_bom_wise_data = {}
+            if not use_bom:
+                product_ids = lines.filtered(
+                    lambda line: (
+                            line.demand_adjustment_qty > 0
+                            and line.product_id.reorder_product_classification in (
+                                'finished_good',
+                                'semi_finished_good',
+                            )
+                    )
+                ).mapped('product_id')
+                mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
             for line in lines:
-                if not use_bom:
-                    product_ids = lines.filtered(
-                        lambda line: (
-                                line.demand_adjustment_qty > 0
-                                and line.product_id.reorder_product_classification in (
-                                    'finished_good',
-                                    'semi_finished_good',
-                                )
-                        )
-                    ).mapped('product_id')
-                    mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
-
                 product = line.product_id
                 qty = line.demand_adjustment_qty
 
                 if qty <= 0 or product.is_kit_product:
                     continue
 
-                if use_bom and not product.reorder_bom_id:
+                if (use_bom
+                    and product.reorder_product_classification in ('finished_good', 'semi_finished_good')
+                    and not product.reorder_bom_id
+                ):
                     _logger.warning(
                         "Reorder BOM not found for product '%s' (ID: %s). Skipping demand generation.",
                         product.display_name,
                         product.id,
                     )
-                    continue
-
-                if not use_bom and not product.bom_ids:
                     continue
 
                 classification = product.reorder_product_classification
@@ -596,8 +598,8 @@ class AdvanceReorderOrderProcess(models.Model):
                     )
 
             component_data =  dict(component_data)
-            self._generate_component_demand_lines(config, component_data, warehouse_groups, )
-            self._generate_by_product_lines(by_product_data)
+            self._generate_component_demand_lines(config, component_data,)
+            self._generate_by_product_lines(config, by_product_data)
 
 
     def _explode_bom_into_tabs(
@@ -629,7 +631,7 @@ class AdvanceReorderOrderProcess(models.Model):
         bom_parent = parent_product or product
 
         for current_bom, current_qty in bom_allocations:
-            self._collect_bom_by_products( product, current_qty, by_product_data, bom=current_bom,)
+            self._collect_bom_by_products(product, current_qty, by_product_data, bom=current_bom,)
 
             bom_qty = current_bom.product_qty or 1.0
 
@@ -864,13 +866,12 @@ class AdvanceReorderOrderProcess(models.Model):
         produced_line = ProducedLine.create(vals)
         return produced_line, produced_line.net_demand
 
-    def _generate_component_demand_lines(self, config, component_data=None,
-                                         warehouse_groups=None, ):
+    def _generate_component_demand_lines(self, config, component_data=None,):
         if not component_data:
             return
 
         ComponentLine = self.env['advance.reorder.component.demand.line']
-        warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
+        warehouse_ids = self.config_ids.mapped('warehouse_group_id.warehouse_ids').ids
 
         for product_id, bom_required_qty in component_data.items():
             product = self.env['product.product'].browse(product_id)
@@ -881,6 +882,7 @@ class AdvanceReorderOrderProcess(models.Model):
             scrap_data = self.get_scrap_data(config, product, )
             ComponentLine.create({
                 'reorder_process_id': self.id,
+                'config_id': config.id,
                 'product_id': product_id,
                 'available_qty': warehouse_qty['available'],
                 'required_qty': qty,
@@ -890,7 +892,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 'source_line_ids': bom_required_qty.get('source_line_ids'),
             })
 
-    def _generate_by_product_lines(self, by_product_data=None):
+    def _generate_by_product_lines(self, config, by_product_data=None):
         if not by_product_data:
             return
 
@@ -901,6 +903,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
             ByProductLine.create({
                 'reorder_process_id': self.id,
+                'config_id': config.id,
                 'product_id': entry['product_id'],
                 'source_product_id': entry.get('source_product_id'),
                 'source_product_demand': entry.get('source_product_demand', 0.0),
