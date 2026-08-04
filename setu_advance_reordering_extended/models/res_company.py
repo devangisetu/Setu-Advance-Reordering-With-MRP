@@ -15,15 +15,15 @@ class ResCompany(models.Model):
         help="If enabled, scrap  consider in Real Demand calculation."
     )
 
-    subcontracting_enabled = fields.Boolean(
+    use_subcontracting_for_orderpoint = fields.Boolean(
         string="Subcontracting",
         default=False,
-        help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view."
+        help="Include subcontracting in lead time calculation."
     )
-    scrap_enabled = fields.Boolean(
+    use_scrap_for_orderpoint = fields.Boolean(
         string="Scrap",
         default=False,
-        help="If enabled, scrap history tab will be visible on the reordering rules form view."
+        help="Include scrap in daily demand calculation."
     )
 
     subcontract_lead_calc_base_on = fields.Selection([

@@ -110,7 +110,7 @@ class StockWarehouseOrderpoint(models.Model):
               added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
               use: to calculate lead time.
         """
-        calc_base_on = self.env['advance.reordering.settings'].search([]).purchase_lead_calc_base_on
+        calc_base_on = self.company_id.purchase_lead_calc_base_on
         if calc_base_on != 'static_lead_time':
             for orderpoint_id in self.ids:
                 orderpoint = self.browse(orderpoint_id)
@@ -125,10 +125,10 @@ class StockWarehouseOrderpoint(models.Model):
                     product_history += orderpoint.product_warehouse_movement_history_ids.mapped('lead_time')
 
                 avg_lead_time = product_history and round(mean(product_history)) or 1
-                calc_method = self.env['advance.reordering.settings'].search([]).max_lead_days_calc_method
+                calc_method = self.company_id.max_lead_days_calc_method
                 if calc_method == 'avg_extra_percentage':
                     extra_percentage = float(
-                        self.env['advance.reordering.settings'].search([]).extra_lead_percentage or 0.0) + 1.0
+                        self.company_id.extra_lead_percentage or 0.0) + 1.0
                     max_lead_time = avg_lead_time and round(avg_lead_time * extra_percentage) or 1
                 else:
                     max_lead_time = product_history and round(max(product_history)) or 1
@@ -153,9 +153,9 @@ class StockWarehouseOrderpoint(models.Model):
         filtered_avg_data = sum(filtered_data.mapped('sales_qty')) if sum(filtered_data.mapped('sales_qty')) > 0 else 0
         filtered_max_data = filtered_data.mapped('max_daily_sale_qty')
         avg_sale = filtered_avg_data and filtered_avg_data / number_of_sales_days or 0.0
-        calc_method = self.env['advance.reordering.settings'].search([]).max_sales_calc_method
+        calc_method = self.company_id.max_sales_calc_method
         if calc_method == 'avg_extra_percentage':
-            extra_percentage = float(self.env['advance.reordering.settings'].search([]).extra_sales_percentage) + 1.0
+            extra_percentage = float(self.company_id.extra_sales_percentage) + 1.0
             max_sale = avg_sale and avg_sale * extra_percentage or 0.0
         else:
             max_sale = filtered_max_data and max(filtered_max_data) or 0.0
@@ -303,7 +303,7 @@ class StockWarehouseOrderpoint(models.Model):
             'ads_qty': 0,
             'max_daily_sale_qty': 0,
         }
-        calc_base_on = self.env['advance.reordering.settings'].search([]).purchase_lead_calc_base_on
+        calc_base_on = self.company_id.purchase_lead_calc_base_on
         if calc_base_on != 'static_lead_time':
             vals.update({'max_lead_time': 0,
                          'avg_lead_time': 0})

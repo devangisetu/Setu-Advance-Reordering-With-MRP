@@ -15,10 +15,10 @@
 
             <xpath expr="//field[@name='add_iwt_in_lead_calc']" position="after">
                 <field name="add_mo_in_lead_calc"/>
-                <field name="subcontracting_enabled" invisible="1"/>
-                <field name="add_sc_in_lead_calc" invisible="not subcontracting_enabled"/>
+                <field name="use_subcontracting_for_orderpoint" invisible="1"/>
+                <field name="add_sc_in_lead_calc" invisible="not use_subcontracting_for_orderpoint"/>
                 <field name="warehouse_changed" invisible="1"/>
-                <field name="scrap_enabled" invisible="1"/>
+                <field name="use_scrap_for_orderpoint" invisible="1"/>
             </xpath>
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
@@ -70,7 +70,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Resupply History" invisible="not subcontracting_enabled or demand_planning_type == 'sales_driven' or parent_orderpoint_ids">
+                    <page string="Resupply History" invisible="not use_subcontracting_for_orderpoint or demand_planning_type == 'sales_driven' or parent_orderpoint_ids">
                         <field name="product_resupply_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
@@ -85,7 +85,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Scrap History" invisible="not scrap_enabled or parent_orderpoint_ids">
+                    <page string="Scrap History" invisible="not use_scrap_for_orderpoint or parent_orderpoint_ids">
                         <field name="product_scrap_history_ids" readonly="1">
                             <list create="false" default_order="start_date desc">
                                 <field name="start_date" readonly="1" optional="show"/>
@@ -123,7 +123,7 @@
                             </list>
                         </field>
                     </page>
-                    <page string="Subcontract Orders" invisible="not subcontracting_enabled or not add_sc_in_lead_calc">
+                    <page string="Subcontract Orders" invisible="not use_subcontracting_for_orderpoint or not add_sc_in_lead_calc">
                         <field name="product_subcontract_history_ids" readonly="1">
                             <list create="false" default_order="po_date desc">
                                 <field name="purchase_id" readonly="1"/>

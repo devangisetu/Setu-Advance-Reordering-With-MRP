@@ -6,7 +6,7 @@ class CreateReordering(models.TransientModel):
     _name = 'create.reordering'
 
     def _get_purchase_lead_calc_base_on(self):
-        return self.env['advance.reordering.settings'].search([]).purchase_lead_calc_base_on
+        return self.company_id.purchase_lead_calc_base_on
 
     company_ids = fields.Many2many("res.company", string="Company")
     product_category_ids = fields.Many2many("product.category", string="Product Categories")
