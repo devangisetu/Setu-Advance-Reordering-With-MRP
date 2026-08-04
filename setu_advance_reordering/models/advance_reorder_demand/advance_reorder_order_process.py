@@ -134,9 +134,9 @@ class AdvanceReorderOrderProcess(models.Model):
             vendor = record.vendor_id
             if not vendor:
                 all_products = self.env['product.product'].sudo().search(
-                    [('purchase_ok', '!=', False),('company_id', 'in', [False, self.env.company.id])])
+                    [('purchase_ok', '!=', False),('company_id', 'in', [False, self.company_id.id])])
             else:
-                all_products = self.env['product.supplierinfo'].sudo().search([('partner_id', '=', vendor.id),('company_id', 'in', [False, self.env.company.id])]).mapped(
+                all_products = self.env['product.supplierinfo'].sudo().search([('partner_id', '=', vendor.id),('company_id', 'in', [False, self.company_id.id])]).mapped(
                     'product_tmpl_id').mapped('product_variant_ids').filtered(lambda x: x.purchase_ok != False)
             record.sudo().computed_product_ids = all_products
 
@@ -391,7 +391,7 @@ class AdvanceReorderOrderProcess(models.Model):
         else:
             seller = product.with_context({
                 'sort_by': self.vendor_selection_strategy,
-                'op_company': company_id or self.user_id.company_id or self.env.company,
+                'op_company': company_id or self.company_id or self.env.company,
             })._select_seller(quantity=total_demand)
             if not seller or not seller.partner_id:
                 return self.env['product.supplierinfo']
@@ -420,10 +420,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 for line_id in lines:
                     line_id.wh_sharing_percentage = round((line_id.demand_adjustment_qty / total_demand) * 100) or 0.0
 
-                warehouse_id = lines[0].warehouse_group_id and lines[0].warehouse_group_id[0].warehouse_ids
-                warehouse_id = warehouse_id and warehouse_id[0] or False
-
-                company_id = warehouse_id and warehouse_id.company_id or False
+                company_id = self.company_id or False
 
                 ps_info = self._get_product_supplier_info(product, company_id, total_demand)
 
@@ -545,7 +542,7 @@ class AdvanceReorderOrderProcess(models.Model):
               added by: Aastha Vora | On: Oct - 15 - 2024 | Task: 998
               use: use to planned date.
         """
-        days = self.user_id.company_id.po_lead or 0
+        days = self.company_id.po_lead or 0
         days += product_id._select_seller(
             partner_id=partner_id,
             quantity=product_qty,
@@ -563,7 +560,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not partner:
             raise UserError(_('A vendor is required to prepare purchase order lines.'))
         summaries = summary_lines if summary_lines is not None else self.summary_ids
-        company_for_tax = warehouse_group_id.warehouse_ids[:1].company_id or self.env.company
+        company_for_tax = self.company_id or self.env.company
 
         po_line_vals = []
 
@@ -586,11 +583,7 @@ class AdvanceReorderOrderProcess(models.Model):
                     partner_id=partner.id,
                 )
 
-                warehouse_id = reorder_line[0].warehouse_group_id and reorder_line[0].warehouse_group_id[
-                    0].warehouse_ids
-                warehouse_id = warehouse_id and warehouse_id[0] or False
-
-                company_id = warehouse_id and warehouse_id.company_id or False
+                company_id = self.company_id or False
 
                 if company_id:
                     ps_info = product_id.seller_ids.filtered(lambda
@@ -641,7 +634,7 @@ class AdvanceReorderOrderProcess(models.Model):
             raise UserError(_('A vendor is required to create a purchase order.'))
         origins = self.name
         purchase_date = datetime.today()
-        company_id = default_warehouse.company_id
+        company_id = self.company_id
         fpos = self.env['account.fiscal.position'].with_company(company_id)._get_fiscal_position(partner)
         fpos = fpos or False
         order_line_vals = self._prepare_purchase_order_line_vals(
@@ -704,7 +697,7 @@ class AdvanceReorderOrderProcess(models.Model):
             for product_id in product_ids:
                 seller = product_id.with_context({
                     'sort_by': self.vendor_selection_strategy,
-                    'op_company': self.user_id.company_id,
+                    'op_company': self.company_id,
                 })._select_seller(quantity=None)
                 if not seller or not seller.partner_id:
                     continue

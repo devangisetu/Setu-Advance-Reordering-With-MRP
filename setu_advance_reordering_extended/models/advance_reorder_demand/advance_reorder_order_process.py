@@ -1133,10 +1133,7 @@ class AdvanceReorderOrderProcess(models.Model):
             order_action="purchase",
         )
 
-    def get_vendor_product_mapping_dict(self):
-        purchase_summaries = self._get_summary_lines_for_action('purchase')
-        if not purchase_summaries:
-            return {}
+    def get_vendor_product_mapping_dict(self, purchase_summaries):
         product_ids = purchase_summaries.mapped('product_id')
         vendor_product_dict = {}
         if self.vendor_selection_strategy == 'specific_vendor':
@@ -1190,7 +1187,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
             return self.action_open_po_vendor_wizard()
 
-        vendor_product_dict = self.get_vendor_product_mapping_dict()
+        vendor_product_dict = self.get_vendor_product_mapping_dict(purchase_summaries)
 
         for vendor_id, product_list in vendor_product_dict.items():
             partner = self.env['res.partner'].browse(vendor_id)
