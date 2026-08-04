@@ -13,12 +13,12 @@ class CreateReordering(models.TransientModel):
             ('production_history', 'Production Orders'),
             ('consumption_history', 'Consumption History'),
         ]
-        if self.company_id.use_subcontracting_for_orderpoint:
+        if self.env.company.use_subcontracting_for_orderpoint:
             options.extend([
                 ('resupply_history', 'Resupply History'),
                 ('subcontract_history', 'Subcontracting Orders'),
             ])
-        if self.company_id.use_scrap_for_orderpoint:
+        if self.env.company.use_scrap_for_orderpoint:
             options.append(('scrap_history', 'Scrap History'))
         return options
 
@@ -36,7 +36,7 @@ class CreateReordering(models.TransientModel):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        if self.company_id.use_subcontracting_for_orderpoint:
+        if self.env.company.use_subcontracting_for_orderpoint:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 

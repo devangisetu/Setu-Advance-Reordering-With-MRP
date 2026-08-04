@@ -352,19 +352,24 @@ class StockWarehouseOrderpoint(models.Model):
                         max_lead_times.append(max(subcontract_delays))
             if source_averages:
                 avg_lead_time = round(mean(source_averages)) or 1
-                max_lead_time = round(max(max_lead_times)) if max_lead_times else 1
+                max_lead_time = max(round(max(max_lead_times)) if max_lead_times else 1, avg_lead_time)
                 orderpoint.write({
                     'avg_lead_time': avg_lead_time,
                     'max_lead_time': max_lead_time
                 })
         return True
 
-    def _get_reorder_bom(self, product):
-        bom = product.reorder_bom_id
-        if not bom:
-            bom_dict = self.env['mrp.bom']._bom_find(product, company_id=self.env.company.id)
-            bom = bom_dict.get(product)
-        return bom
+    def _get_reorder_boms(self, product):
+        if product.reorder_bom_id:
+            return product.reorder_bom_id
+        boms = self.env['mrp.bom'].search([
+            '|',
+            ('product_id', '=', product.id),
+            '&',
+            ('product_tmpl_id', '=', product.product_tmpl_id.id),
+            ('product_id', '=', False)
+        ])
+        return boms
 
     def _is_mto_product(self, product):
         mto_route = self.env.ref('stock.route_warehouse0_mto', raise_if_not_found=False)
@@ -421,21 +426,22 @@ class StockWarehouseOrderpoint(models.Model):
             if not op.auto_create_components_orderpoint or not op.product_id or op.product_id.id in processed_products:
                 continue
             processed_products.add(op.product_id.id)
-            bom = self._get_reorder_bom(op.product_id)
-            if not bom:
+            boms = self._get_reorder_boms(op.product_id)
+            if not boms:
                 continue
-            for line in bom.bom_line_ids:
-                product = line.product_id
-                if not product or not product.active or product.type == 'combo' or not product.is_storable:
-                    continue
-                if self._is_mto_product(product):
-                    continue
-                target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
-                target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
-                comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
-                all_affected_orderpoints |= comp_op
-                if comp_op.product_id.id not in processed_products:
-                    to_process.append(comp_op)
+            for bom in boms:
+                for line in bom.bom_line_ids:
+                    product = line.product_id
+                    if not product or not product.active or product.type == 'combo' or not product.is_storable:
+                        continue
+                    if self._is_mto_product(product):
+                        continue
+                    target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
+                    target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
+                    comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
+                    all_affected_orderpoints |= comp_op
+                    if comp_op.product_id.id not in processed_products:
+                        to_process.append(comp_op)
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
@@ -494,7 +500,7 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_iwt_history()
             self.update_product_production_history()
             self.update_product_subcontract_history()
-            if self.scrap_enabluse_scrap_for_orderpointed:
+            if self.use_scrap_for_orderpoint:
                 self.update_product_scrap_history()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
