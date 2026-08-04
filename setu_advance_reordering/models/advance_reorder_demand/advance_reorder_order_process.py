@@ -249,8 +249,8 @@ class AdvanceReorderOrderProcess(models.Model):
         """
         vals = []
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
-        reorder_rounding_method = self.env['advance.reordering.settings'].search([]).reorder_rounding_method
-        reorder_round_quantity = int(self.env['advance.reordering.settings'].search([]).reorder_round_quantity)
+        reorder_rounding_method = self.company_id.reorder_rounding_method
+        reorder_round_quantity = int(self.company_id.reorder_round_quantity)
 
         for data in sales_data:
             product = self.env['product.product'].browse(data.get('product_id'))

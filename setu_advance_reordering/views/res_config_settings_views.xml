@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_inherit_reorder" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.reorder</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="37"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+
+                <app string="Advance Reordering"
+                     name="setu_advance_reordering"
+                     data-string="Advance Reordering">
+
+                    <block title="General Settings" name="general_settings">
+
+                        <setting
+                                help="Configure the rounding method used for reorder quantities.">
+                            <field name="reorder_rounding_method"/>
+                        </setting>
+
+                        <setting>
+                            <field name="reorder_round_quantity"/>
+                        </setting>
+
+                    </block>
+
+                    <block title="Advance Reordering With Real Demand" name="advance_reordering_with_demand">
+
+                        <setting string="Rounding Method"
+                                 help="Select the rounding method for demand generation in Reorder with Real Demand and Replenishment from Warehouse Replenishment. Rounding up will increase the calculated demand to the nearest whole number, while rounding down will decrease it.">
+                            <field name="reorder_rounding_method"/>
+                        </setting>
+
+                        <setting string="Round Quantity"
+                                 help="Enter the Rounding Quantity, and demand generated will be rounded to the nearest multiple of this quantity based on the selected Rounding Method (either Rounding Up or Rounding Down).">
+                            <field name="reorder_round_quantity"/>
+                        </setting>
+
+                        <setting string="Vendor Lead Days Method"
+                                 help="Set the method for determining vendor lead days within the Reorder with Real Demand Planner system for placing orders.">
+                            <field name="vendor_lead_days_method"/>
+                        </setting>
+
+                        <setting string="Vendor Static Lead Days"
+                                 help="Set Rounding Quantity for Demand generate from Advance Reorder with Real Demand and Replenishment from Warehouses."
+                                 invisible="vendor_lead_days_method != 'static'">
+                            <field name="vendor_static_lead_days"/>
+                        </setting>
+
+                        <setting invisible="vendor_lead_days_method == 'static'">
+                        </setting>
+
+                    </block>
+
+                    <block title="Advance Reordering With Orderpoint" name="advance_reordering_with_orderpoint">
+
+                        <setting string="Purchase Lead Calculation"
+                                 help="Select an option to determine whether the lead time should be based on the vendor lead time set in the purchase tab of the product, the actual lead time calculated from the purchase order confirmed date to product receipt, or a static lead time as per User's choice.">
+                            <field name="purchase_lead_calc_base_on"/>
+                        </setting>
+
+                        <setting>
+                        </setting>
+
+                        <setting string="Maximum Lead Days Calculation"
+                                 help="Select between two options for Maximum Lead Days calculation in Reorder with Order Points: Either Actual Maximum Lead Time, determined from Purchase History or Average + Extra Time, calculating the average lead time plus an additional duration."
+                                 invisible="purchase_lead_calc_base_on not in ['vendor_lead_time', 'real_time']">
+                            <field name="max_lead_days_calc_method"/>
+                        </setting>
+
+                        <setting string="Extra Lead Percentage"
+                                 help="(Maximum Lead time + Extra Percentage) as Maximum Lead time of purchase for Advance Reordering with Order points."
+                                 invisible="purchase_lead_calc_base_on not in ['vendor_lead_time', 'real_time'] or max_lead_days_calc_method != 'avg_extra_percentage'">
+                            <field name="extra_lead_percentage" widget="percentage"/>
+                        </setting>
+
+                        <setting string="Maximum Sales Calculation"
+                                 help="Select between two options for maximum daily sales calculation in Reorder with order points: Either Maximum Daily Sales, identifying the highest daily quantity sold, or Average + Extra Percentage, calculating the average daily quantity sold plus an additional percentage.">
+                            <field name="max_sales_calc_method"/>
+                        </setting>
+
+                        <setting string="Extra Sales Percentage"
+                                 help="(Maximum Daily Sales + Extra Percentage) as Maximum Daily Sales of sales for Advance Reordering with Order points."
+                                 invisible="max_sales_calc_method != 'avg_extra_percentage'">
+                            <field name="extra_sales_percentage" widget="percentage"/>
+                        </setting>
+
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_reorder_configuration" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module' : 'setu_advance_reordering', 'bin_size': False}</field>
+    </record>
+
+</odoo>

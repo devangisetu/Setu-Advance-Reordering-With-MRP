@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_inherit_reorder_extended" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.reorder.extended</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="setu_advance_reordering.res_config_settings_view_form_inherit_reorder"/>
+        <field name="arch" type="xml">
+
+            <!-- Real Demand: scrap & subcontracting in demand calculation -->
+            <xpath expr="//block[@name='advance_reordering_with_demand']" position="inside">
+                <setting string="Scrap"
+                         help="If enabled, scrap consider in Real Demand calculation.">
+                    <field name="use_scrap_for_demand"/>
+                </setting>
+                <setting string="Subcontracting"
+                         help="Include subcontracting Bill of Materials in demand calculation.">
+                    <field name="use_subcontracting_for_demand"/>
+                </setting>
+            </xpath>
+
+            <!-- Orderpoint: scrap/subcontracting toggles and subcontract lead config -->
+            <xpath expr="//block[@name='advance_reordering_with_orderpoint']" position="inside">
+                <setting string="Scrap"
+                         help="If enabled, scrap history tab will be visible on the reordering rules form view.">
+                    <field name="scrap_enabled"/>
+                </setting>
+                <setting string="Subcontracting"
+                         help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view.">
+                    <field name="subcontracting_enabled"/>
+                </setting>
+                <setting string="Subcontract Lead Calculation"
+                         help="Select whether lead time should be based on subcontractor lead time, actual subcontract history receipt, or static days."
+                         invisible="not subcontracting_enabled">
+                    <field name="subcontract_lead_calc_base_on"/>
+                </setting>
+                <setting string="Subcontract Maximum Lead Days Calculation"
+                         help="Method for Maximum Lead Days calculation: Actual Maximum Lead Time or Average + Extra Time."
+                         invisible="not subcontracting_enabled or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time']">
+                    <field name="subcontract_max_lead_days_calc_method"/>
+                </setting>
+                <setting string="Subcontract Extra Lead Percentage"
+                         help="Extra Percentage for Maximum Lead time of subcontract."
+                         invisible="not subcontracting_enabled or subcontract_lead_calc_base_on not in ['vendor_lead_time', 'real_time'] or subcontract_max_lead_days_calc_method != 'avg_extra_percentage'">
+                    <field name="subcontract_extra_lead_percentage" widget="percentage"/>
+                </setting>
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

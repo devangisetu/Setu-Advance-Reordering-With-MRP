@@ -104,7 +104,7 @@
                   parent="setu_advance_reordering.menu_sub_reorder_configuration"
                   sequence="1"
                   groups="group_setu_advance_reordering_manager"
-                  action="setu_advance_reordering.action_advance_reordering_settings"/>
+                  action="setu_advance_reordering.action_reorder_configuration"/>
 
         <menuitem id="menu_stock_warehouse_group"
                   name="Warehouse Group"

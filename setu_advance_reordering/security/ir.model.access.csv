@@ -22,6 +22,5 @@ access_product_iwt_history,product.iwt.history,model_product_iwt_history,base.gr
 access_specific_location_mapping,specific.location.mapping,model_specific_location_mapping,base.group_user,1,1,1,1
 access_advance_reorder_planner,advance.reorder.planner,model_advance_reorder_planner,base.group_user,1,1,1,1
 access_advance_reorder_process_auto_workflow,advance.reorder.process.auto.workflow,model_advance_reorder_process_auto_workflow,base.group_user,1,1,1,1
-access_advance_reordering_settings,access_advance_reordering_settings,model_advance_reordering_settings,base.group_user,1,1,1,1
 access_advance_reorder_po_vendor_wizard,advance.reorder.po.vendor.wizard,model_advance_reorder_po_vendor_wizard,base.group_user,1,1,1,1
 access_advance_reorder_po_vendor_wizard_line,advance.reorder.po.vendor.wizard.line,model_advance_reorder_po_vendor_wizard_line,base.group_user,1,1,1,1

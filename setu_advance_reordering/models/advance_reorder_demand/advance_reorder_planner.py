@@ -163,16 +163,15 @@ class AdvanceReorderPlanner(models.Model):
              added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
              use: Prepare vals to create reorder record.
         """
-        settings = self.env['advance.reordering.settings'].search([], limit=1)
         product_ids = self.env['product.product'].browse(product_list)
         config_vals = []
 
         if not vendor:
-            calc_base_on = settings.vendor_lead_days_method
+            calc_base_on = self.company_id.vendor_lead_days_method
             if calc_base_on == 'static':
-                lead_days = settings.vendor_static_lead_days
+                lead_days = self.company_id.vendor_static_lead_days
             else:
-                lead_days = settings.vendor_static_lead_days or 1
+                lead_days = self.company_id.vendor_static_lead_days or 1
             for config_id in self.config_ids:
                 config_vals.append((0, 0, {'warehouse_group_id': config_id.warehouse_group_id.id,
                                            'default_warehouse_id': config_id.default_warehouse_id.id,
@@ -198,10 +197,10 @@ class AdvanceReorderPlanner(models.Model):
         vendor_id = self.env['res.partner'].browse(vendor)
         vendor_lead = vendor_id.vendor_pricelist_ids.filtered(
             lambda x: x.product_id.id in product_list or x.product_tmpl_id in product_ids.mapped('product_tmpl_id'))
-        calc_base_on = settings.vendor_lead_days_method
+        calc_base_on = self.company_id.vendor_lead_days_method
         lead_days = 0
         if calc_base_on == 'static':
-            lead_days = settings.vendor_static_lead_days
+            lead_days = self.company_id.vendor_static_lead_days
         elif calc_base_on == 'max':
             if not vendor_lead:
                 raise ValidationError(

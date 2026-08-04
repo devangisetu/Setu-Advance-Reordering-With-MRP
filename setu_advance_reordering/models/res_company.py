@@ -1,11 +1,10 @@
-from odoo import api, fields, models, _
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+from odoo import fields, models
 
 
-class AdvanceReorderingSettings(models.Model):
-    _name = 'advance.reordering.settings'
-    _description = 'Advance Reordering Settings'
+class ResCompany(models.Model):
+    _inherit = "res.company"
 
-    name= fields.Char(string="Name", default="Advance Reordering Configuration")
     reorder_rounding_method = fields.Selection([('round_up', 'Rounding up'), ('round_down', 'Rounding down')],
                                                string="Rounding Method",
                                                help="Rounding Method will be set rounding according to selected value")
@@ -35,36 +34,3 @@ class AdvanceReorderingSettings(models.Model):
                                                 ('static', 'static lead days')
                                                 ], string='Vendor lead days calculation Method')
     vendor_static_lead_days = fields.Integer("Vendor Static Lead Days")
-
-    company_id = fields.Many2one(comodel_name='res.company', string='Company', default=lambda self: self.env.company,)
-
-    @api.model
-    def open_record_action(self):
-        """
-        Open company-specific Advance Reordering Settings.
-        """
-        company = self.env.company
-
-        record = self.search([
-            ('company_id', '=', company.id)
-        ], limit=1)
-
-        if not record:
-            record = self.create({
-                'name': 'Advance Reordering Configuration',
-                'company_id': company.id,
-            })
-
-        view_id = self.env.ref(
-            'setu_advance_reordering.advance_reordering_settings_view_form'
-        ).id
-
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Settings - Advance Reordering'),
-            'res_model': 'advance.reordering.settings',
-            'res_id': record.id,
-            'view_mode': 'form',
-            'views': [(view_id, 'form')],
-            'target': 'current',
-        }

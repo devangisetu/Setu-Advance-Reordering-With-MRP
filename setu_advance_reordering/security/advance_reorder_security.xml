@@ -21,11 +21,5 @@
         <field name="domain_force">[('company_id', 'in', company_ids + [False])]</field>
     </record>
 
-    <!-- Reorder Configuration -->
-    <record id="advance_reordering_settings_company_rule" model="ir.rule">
-        <field name="name">Advance Reordering Settings Company</field>
-        <field name="model_id" ref="model_advance_reordering_settings"/>
-        <field name="domain_force">[('company_id', 'in', company_ids + [False])]</field>
-    </record>
 
 </odoo>

@@ -264,10 +264,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
-        reorder_configuration = self.env['advance.reordering.settings'].search(
-            [('company_id', '=', self.company_id.id)], limit=1)
-
-        if not reorder_configuration.use_subcontracting:
+        if not self.company_id.use_subcontracting_for_demand:
             return []
 
         production_driven_products = line_product_ids.filtered(
@@ -296,10 +293,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
-        reorder_configuration = self.env['advance.reordering.settings'].search(
-            [('company_id', '=', self.company_id.id)], limit=1)
-
-        if not reorder_configuration.use_scrap:
+        if not self.company_id.use_scrap_for_demand:
             return []
 
         products = set(line_product_ids.ids)
@@ -430,10 +424,8 @@ class AdvanceReorderOrderProcess(models.Model):
     def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, is_mto_route):
         vals = []
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
-        reorder_setting = self.env['advance.reordering.settings'].search([('company_id', '=', self.company_id.id)],
-                                                                         limit=1)
-        reorder_rounding_method = reorder_setting.reorder_rounding_method
-        reorder_round_quantity = reorder_setting.reorder_round_quantity
+        reorder_rounding_method = self.company_id.reorder_rounding_method
+        reorder_round_quantity = self.company_id.reorder_round_quantity
         demand_data.extend(kit_product_data)
 
         for data in demand_data:

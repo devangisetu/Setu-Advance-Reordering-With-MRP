@@ -21,8 +21,7 @@ class StockWarehouseOrderpoint(models.Model):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        setting = self.env['advance.reordering.settings'].search([], limit=1)
-        if setting and setting.subcontracting_enabled:
+        if self.company_id and self.company_id.subcontracting_enabled:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 
