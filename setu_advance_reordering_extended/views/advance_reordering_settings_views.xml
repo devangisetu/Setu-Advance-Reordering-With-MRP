@@ -7,14 +7,12 @@
         <field name="arch" type="xml">
             <xpath expr="//div[@name='advance_reordering_vendor_lead']"
                    position="after">
-                <div class="mt16 mb16">
-                    <h3>Scrap &amp; Subcontracting Settings</h3>
-                </div>
                 <div class="row mt16 o_settings_container" name="advance_reordering_with_scrap_and_subcontracting">
+                    <br></br>
                     <div class="col-12 col-lg-6 o_setting_box">
                         <div>
-                            <label for="use_scrap"/>
                             <field name="use_scrap"/>
+                            <label for="use_scrap"/>
                             <div class="text-muted">
                                 Enable this option to include FG/SFG/Component Loss (during manufacturing)
                                 <br/>
@@ -84,7 +82,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="col-12 col-lg-6 o_setting_box">
                     <div class="o_setting_left_pane">
                         <field name="scrap_enabled"/>
@@ -104,7 +102,8 @@
                     <div class="o_setting_right_pane">
                         <label for="subcontracting_enabled" class="fw-bold"/>
                         <div class="text-muted">
-                            Enable subcontract history, resupply history tabs and lead time configuration on reordering rules.
+                            Enable subcontract history, resupply history tabs and lead time configuration on reordering
+                            rules.
                         </div>
                     </div>
                 </div>
