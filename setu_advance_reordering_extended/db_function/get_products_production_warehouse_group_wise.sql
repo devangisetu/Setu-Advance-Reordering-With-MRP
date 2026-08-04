@@ -18,7 +18,7 @@ $BODY$
         T.product_name,
         T.warehouse_id,
         sum(T.product_qty) as consumed_qty,
-        case when sum(T.product_qty) > 0
+        case when day_difference > 0 AND sum(T.product_qty) > 0
             then sum(T.product_qty) / day_difference
             else 0
         end as ads

@@ -35,7 +35,7 @@ SELECT
     wh.id AS warehouse_id,
     SUM(sm.quantity) AS scrap_qty,
     CASE
-        WHEN SUM(sm.quantity) > 0
+        WHEN day_difference > 0 AND SUM(sm.quantity) > 0
             THEN SUM(sm.quantity) / day_difference
         ELSE 0
     END AS ads

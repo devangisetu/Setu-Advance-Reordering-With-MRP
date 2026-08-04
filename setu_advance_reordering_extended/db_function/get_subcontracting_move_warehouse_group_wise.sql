@@ -55,25 +55,29 @@ SELECT
         END
     ) AS resupply_return_qty,
 
-    (
-        SUM(
-            CASE
-                WHEN dl.is_subcontracting_location = TRUE
-                     AND sl.usage != 'production'
-                THEN sm.quantity
-                ELSE 0
-            END
-        )
-        -
-        SUM(
-            CASE
-                WHEN sl.is_subcontracting_location = TRUE
-                     AND dl.usage != 'production'
-                THEN sm.quantity
-                ELSE 0
-            END
-        )
-    ) / NULLIF(day_difference, 0)::numeric AS ads
+    CASE
+        WHEN day_difference > 0 THEN
+            (
+                SUM(
+                    CASE
+                        WHEN dl.is_subcontracting_location = TRUE
+                             AND sl.usage != 'production'
+                        THEN sm.quantity
+                        ELSE 0
+                    END
+                )
+                -
+                SUM(
+                    CASE
+                        WHEN sl.is_subcontracting_location = TRUE
+                             AND dl.usage != 'production'
+                        THEN sm.quantity
+                        ELSE 0
+                    END
+                )
+            ) / day_difference::numeric
+        ELSE 0
+    END AS ads
 
 FROM stock_move sm
 
