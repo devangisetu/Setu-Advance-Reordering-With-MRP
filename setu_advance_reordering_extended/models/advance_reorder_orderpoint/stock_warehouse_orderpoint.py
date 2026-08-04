@@ -137,12 +137,12 @@ class StockWarehouseOrderpoint(models.Model):
     def _compute_subcontracting_enabled(self):
         enabled = self.company_id.use_subcontracting_for_orderpoint or False
         for op in self:
-            op.subcontracting_enabled = enabled
+            op.use_subcontracting_for_orderpoint = enabled
 
     def _compute_scrap_enabled(self):
         enabled = self.company_id.use_scrap_for_orderpoint or False
         for op in self:
-            op.scrap_enabled = enabled
+            op.use_scrap_for_orderpoint = enabled
 
     def write(self, vals):
         if 'wizard_add_mo_in_lead_calc' in self.env.context:
@@ -189,7 +189,7 @@ class StockWarehouseOrderpoint(models.Model):
                 lambda x: start_date <= x.start_date <= end_date)
             resupply_data = self.product_resupply_history_ids.filtered(
                 lambda x: start_date <= x.start_date <= end_date)
-            if self.scrap_enabled:
+            if self.use_scrap_for_orderpoint:
                 scrap_data = self.product_scrap_history_ids.filtered(
                     lambda x: start_date <= x.start_date <= end_date)
                 sales_qty_sum += sum(scrap_data.mapped('scrap_qty'))
@@ -494,7 +494,7 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_iwt_history()
             self.update_product_production_history()
             self.update_product_subcontract_history()
-            if self.scrap_enabled:
+            if self.scrap_enabluse_scrap_for_orderpointed:
                 self.update_product_scrap_history()
         self._calculate_lead_time()
         self.calculate_sales_average_max()

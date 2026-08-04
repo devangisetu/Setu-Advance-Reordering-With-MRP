@@ -22,11 +22,11 @@
             <!-- Orderpoint: scrap/subcontracting toggles and subcontract lead config -->
             <xpath expr="//block[@name='advance_reordering_with_orderpoint']" position="inside">
                 <setting string="Scrap"
-                         help="If enabled, scrap history tab will be visible on the reordering rules form view.">
+                         help="Include scrap in daily demand calculation.">
                     <field name="use_scrap_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontracting"
-                         help="If enabled, subcontract history, resupply history tabs and lead time configuration for subcontracting will be visible on the reordering rules form view.">
+                         help="Include subcontracting in lead time calculation.">
                     <field name="use_subcontracting_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontract Lead Calculation"

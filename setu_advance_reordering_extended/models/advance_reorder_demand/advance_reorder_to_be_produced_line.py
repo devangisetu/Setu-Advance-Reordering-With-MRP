@@ -62,6 +62,8 @@ class AdvanceReorderToBeProducedLine(models.Model):
     config_id = fields.Many2one(comodel_name='advance.reorder.orderprocess.config',
                                  string='Reorder configuration', help="Reorder configuration")
 
+    warehouse_group_id = fields.Many2one('stock.warehouse.group', string="Warehouse group")
+
 
     @api.depends('bom_id', 'bom_id.type')
     def _compute_bom_type(self):
