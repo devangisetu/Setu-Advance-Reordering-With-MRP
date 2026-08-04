@@ -13,22 +13,9 @@
                      name="setu_advance_reordering"
                      data-string="Advance Reordering">
 
-                    <block title="General Settings" name="general_settings">
+                    <block title="Rounding Settings" name="general_settings">
 
-                        <setting
-                                help="Configure the rounding method used for reorder quantities.">
-                            <field name="reorder_rounding_method"/>
-                        </setting>
-
-                        <setting>
-                            <field name="reorder_round_quantity"/>
-                        </setting>
-
-                    </block>
-
-                    <block title="Advance Reordering With Real Demand" name="advance_reordering_with_demand">
-
-                        <setting string="Rounding Method"
+                       <setting string="Rounding Method"
                                  help="Select the rounding method for demand generation in Reorder with Real Demand and Replenishment from Warehouse Replenishment. Rounding up will increase the calculated demand to the nearest whole number, while rounding down will decrease it.">
                             <field name="reorder_rounding_method"/>
                         </setting>
@@ -37,6 +24,10 @@
                                  help="Enter the Rounding Quantity, and demand generated will be rounded to the nearest multiple of this quantity based on the selected Rounding Method (either Rounding Up or Rounding Down).">
                             <field name="reorder_round_quantity"/>
                         </setting>
+
+                    </block>
+
+                    <block title="Advance Reordering With Real Demand" name="advance_reordering_with_demand">
 
                         <setting string="Vendor Lead Days Method"
                                  help="Set the method for determining vendor lead days within the Reorder with Real Demand Planner system for placing orders.">

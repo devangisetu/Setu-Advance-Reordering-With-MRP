@@ -10,11 +10,11 @@
             <!-- Real Demand: scrap & subcontracting in demand calculation -->
             <xpath expr="//block[@name='advance_reordering_with_demand']" position="inside">
                 <setting string="Scrap"
-                         help="If enabled, scrap consider in Real Demand calculation.">
+                         help="If enabled, scrap quantity will be considered in the Real Demand calculation.">
                     <field name="use_scrap_for_demand"/>
                 </setting>
                 <setting string="Subcontracting"
-                         help="Include subcontracting Bill of Materials in demand calculation.">
+                         help="If enabled, resupply quantity will be considered in the Real Demand calculation.">
                     <field name="use_subcontracting_for_demand"/>
                 </setting>
             </xpath>
