@@ -149,7 +149,6 @@ class StockWarehouseOrderpoint(models.Model):
             vals['add_mo_in_lead_calc'] = self.env.context.get('wizard_add_mo_in_lead_calc')
         if 'wizard_add_sc_in_lead_calc' in self.env.context:
             vals['add_sc_in_lead_calc'] = self.env.context.get('wizard_add_sc_in_lead_calc')
-
         if 'warehouse_id' in vals:
             changed_records = self.env['stock.warehouse.orderpoint']
             for record in self:
@@ -165,7 +164,6 @@ class StockWarehouseOrderpoint(models.Model):
                     )
                     record.message_post(body=body)
                     changed_records |= record
-
             res = super().write(vals)
             if changed_records:
                 super(StockWarehouseOrderpoint, changed_records).write({'warehouse_changed': True})
@@ -361,75 +359,84 @@ class StockWarehouseOrderpoint(models.Model):
                 })
         return True
 
+    def _get_reorder_bom(self, product):
+        bom = product.reorder_bom_id
+        if not bom:
+            bom_dict = self.env['mrp.bom']._bom_find(product, company_id=self.env.company.id)
+            bom = bom_dict.get(product)
+        return bom
+
+    def _is_mto_product(self, product):
+        mto_route = self.env.ref('stock.route_warehouse0_mto', raise_if_not_found=False)
+        if mto_route:
+            product_routes = product.route_ids | product.product_tmpl_id.route_ids
+            return mto_route.id in product_routes.ids
+        return False
+
+    def _find_or_create_component_orderpoint(self, product, parent_op, target_wh_id, target_loc_id):
+        existing_op = self.env['stock.warehouse.orderpoint'].search([
+            ('product_id', '=', product.id),
+            ('warehouse_id', '=', target_wh_id),
+            ('company_id', '=', parent_op.company_id.id),
+        ], limit=1)
+        if existing_op:
+            if parent_op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
+                existing_op.write({'auto_create_components_orderpoint': True})
+            if parent_op.id not in existing_op.parent_orderpoint_ids.ids:
+                existing_op.write({'parent_orderpoint_ids': [(4, parent_op.id)]})
+            return existing_op
+        create_vals = {
+            'product_id': product.id,
+            'warehouse_id': target_wh_id,
+            'location_id': target_loc_id,
+            'company_id': parent_op.company_id.id,
+            'route_id': parent_op.route_id.id if (parent_op.route_id and target_wh_id == parent_op.warehouse_id.id) else False,
+            'document_creation_option': parent_op.document_creation_option,
+            'consider_current_period_sales': parent_op.consider_current_period_sales,
+            'buffer_days': parent_op.buffer_days,
+            'average_sale_calculation_base': parent_op.average_sale_calculation_base,
+            'add_purchase_in_lead_calc': parent_op.add_purchase_in_lead_calc,
+            'add_iwt_in_lead_calc': parent_op.add_iwt_in_lead_calc,
+            'add_mo_in_lead_calc': parent_op.add_mo_in_lead_calc,
+            'add_sc_in_lead_calc': parent_op.add_sc_in_lead_calc,
+            'demand_planning_type': parent_op.demand_planning_type,
+            'qty_multiple': parent_op.qty_multiple,
+            'visibility_days': parent_op.visibility_days,
+            'trigger': 'auto',
+            'auto_create_components_orderpoint': parent_op.auto_create_components_orderpoint,
+            'parent_orderpoint_ids': [(4, parent_op.id)],
+        }
+        return self.env['stock.warehouse.orderpoint'].create(create_vals)
+
     def _auto_create_components_orderpoint(self):
         if self._context.get('prevent_component_recursion'):
             return
-        
         to_process = list(self)
         processed_products = set()
         all_affected_orderpoints = self.env['stock.warehouse.orderpoint']
-        
+        wizard_wh_id = self.env.context.get('wizard_component_planning_warehouse_id')
+        wizard_wh = self.env['stock.warehouse'].browse(wizard_wh_id) if wizard_wh_id else False
         while to_process:
             op = to_process.pop(0)
             if not op.auto_create_components_orderpoint or not op.product_id or op.product_id.id in processed_products:
                 continue
-            
             processed_products.add(op.product_id.id)
-            
-            bom_dict = self.env['mrp.bom']._bom_find(op.product_id, company_id=op.company_id.id)
-            bom = bom_dict.get(op.product_id)
+            bom = self._get_reorder_bom(op.product_id)
             if not bom:
                 continue
-            
             for line in bom.bom_line_ids:
                 product = line.product_id
                 if not product or not product.active or product.type == 'combo' or not product.is_storable:
                     continue
-                
-                existing_op = self.env['stock.warehouse.orderpoint'].search([
-                    ('product_id', '=', product.id),
-                    ('warehouse_id', '=', op.warehouse_id.id),
-                    ('location_id', '=', op.location_id.id),
-                    ('company_id', '=', op.company_id.id),
-                ], limit=1)
-                
-                if existing_op:
-                    if op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
-                        existing_op.write({'auto_create_components_orderpoint': True})
-                    comp_op = existing_op
-                else:
-                    create_vals = {
-                        'product_id': product.id,
-                        'warehouse_id': op.warehouse_id.id,
-                        'location_id': op.location_id.id,
-                        'company_id': op.company_id.id,
-                        'route_id': op.route_id.id if op.route_id else False,
-                        'document_creation_option': op.document_creation_option,
-                        'consider_current_period_sales': op.consider_current_period_sales,
-                        'buffer_days': op.buffer_days,
-                        'average_sale_calculation_base': op.average_sale_calculation_base,
-                        'add_purchase_in_lead_calc': op.add_purchase_in_lead_calc,
-                        'add_iwt_in_lead_calc': op.add_iwt_in_lead_calc,
-                        'add_mo_in_lead_calc': op.add_mo_in_lead_calc,
-                        'add_sc_in_lead_calc': op.add_sc_in_lead_calc,
-                        'demand_planning_type': op.demand_planning_type,
-                        'qty_multiple': op.qty_multiple,
-                        'visibility_days': op.visibility_days,
-                        'trigger': 'auto',
-                        'auto_create_components_orderpoint': op.auto_create_components_orderpoint,
-                    }
-                    comp_op = self.env['stock.warehouse.orderpoint'].create(create_vals)
-                
+                if self._is_mto_product(product):
+                    continue
+                target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
+                target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
+                comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
                 all_affected_orderpoints |= comp_op
-                
                 if comp_op.product_id.id not in processed_products:
                     to_process.append(comp_op)
-            
         if all_affected_orderpoints:
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_purchase_history()
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_iwt_history()
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_sales_history()
-            
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
 

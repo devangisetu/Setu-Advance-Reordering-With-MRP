@@ -65,6 +65,10 @@ class CreateReordering(models.TransientModel):
         default=False,
         help="If enabled, product selection will only show products whose orderpoints have no parent product orderpoints."
     )
+    component_planning_warehouse_id = fields.Many2one(
+        "stock.warehouse",
+        string="Component Planning Warehouse"
+    )
     product_domain_ids = fields.Many2many(
         'product.product',
         compute='_compute_product_domain_ids',
@@ -104,6 +108,7 @@ class CreateReordering(models.TransientModel):
         self = self.with_context(
             wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
             wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
+            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
         )
         return super().perform_operation()
 
@@ -127,7 +132,9 @@ class CreateReordering(models.TransientModel):
             op.onchange_avg_sale_lead_time()
             op.onchange_safety_stock()
         orderpoints.update_order_point_data()
-        orderpoints._auto_create_components_orderpoint()
+        orderpoints.with_context(
+            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+        )._auto_create_components_orderpoint()
 
     def create_reorder_rule(self):
         res = super().create_reorder_rule()
