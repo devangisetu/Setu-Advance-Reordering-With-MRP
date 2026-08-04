@@ -35,15 +35,6 @@ class AdvanceReorderToBeProducedLine(models.Model):
         string='Net Demand',
         store=True,
     )
-    production_ids = fields.Many2many(
-        'mrp.production',
-        'advance_reorder_to_be_produced_line_mrp_production_rel',
-        'to_be_produced_line_id',
-        'production_id',
-        string='Manufacturing Orders',
-        readonly=True,
-        help='Draft MOs producing this product within the reorder date range.',
-    )
 
     bom_id = fields.Many2one(
         'mrp.bom',

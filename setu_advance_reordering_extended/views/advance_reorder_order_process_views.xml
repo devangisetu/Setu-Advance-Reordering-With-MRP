@@ -121,12 +121,12 @@
                                     title="Source Products"
                                     icon="fa-sitemap"/>
                             <field name="incoming_qty"/>
-                            <field name="scrap_qty"/>
                             <button class="oe_stat_button oe_inline"
                                     name="action_incoming_stock_moves"
                                     type="object"
                                     icon="fa-exchange"
                                     title="Incoming Stock Moves"/>
+                            <field name="scrap_qty"/>
                             <field name="net_demand"/>
                         </list>
                         <form string="To Be Produced" create="false" delete="false">
@@ -135,12 +135,13 @@
                                     <group>
                                         <field name="product_id" readonly="1"/>
                                         <field name="available_qty" readonly="1"/>
-                                        <field name="required_qty" readonly="1"/>
-                                    </group>
-                                    <group>
                                         <field name="incoming_qty" readonly="1"/>
                                         <field name="net_demand" readonly="1"/>
-                                        <field name="production_ids" widget="many2many_tags" readonly="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="bom_id" readonly="1"/>
+                                        <field name="required_qty" readonly="1"/>
+                                        <field name="scrap_qty" readonly="1"/>
                                     </group>
                                 </group>
                             </sheet>
