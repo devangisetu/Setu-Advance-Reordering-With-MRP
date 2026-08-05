@@ -556,7 +556,7 @@ class AdvanceReorderOrderProcess(models.Model):
                             )
                     )
                 ).mapped('product_id')
-                mo_bom_wise_data = self._get_bom_wise_mo_count(config, product_ids)
+                mo_bom_wise_data = self._get_bom_wise_mo_count(config.warehouse_group_id, product_ids)
             for line in lines:
                 product = line.product_id
                 qty = line.demand_adjustment_qty
@@ -602,16 +602,16 @@ class AdvanceReorderOrderProcess(models.Model):
             return
 
         if self.calculate_demand_based_on == 'without_bom':
-            bom_allocations = self._get_bom_wise_demand_by_mo_ratio(
+            bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                 product,
                 quantity,
                 mo_bom_wise_data=mo_bom_wise_data,
             )
         else:
             default_bom = bom or self._get_product_bom(product)
-            bom_allocations = [(default_bom, quantity)] if default_bom else []
+            bom_wise_demand = [(default_bom, quantity)] if default_bom else []
 
-        if not bom_allocations:
+        if not bom_wise_demand:
             _logger.warning(
                 "No BOM found for product %s (ID: %s).",
                 product.display_name,
@@ -621,22 +621,22 @@ class AdvanceReorderOrderProcess(models.Model):
 
         bom_parent = parent_product or product
 
-        for current_bom, current_qty in bom_allocations:
-            self._collect_bom_by_products(product, current_qty, by_product_data, bom=current_bom, )
+        for bom, qty in bom_wise_demand:
+            self._collect_bom_by_products(product, qty, by_product_data, bom=bom,)
 
-            bom_qty = current_bom.product_qty or 1.0
+            bom_qty = bom.product_qty or 1.0
 
-            for bom_line in current_bom.bom_line_ids:
+            for bom_line in bom.bom_line_ids:
                 component = bom_line.product_id
                 if not component:
                     continue
 
-                required_qty = current_qty * (bom_line.product_qty / bom_qty)
+                required_qty = qty * (bom_line.product_qty / bom_qty)
 
                 self._process_product_by_classification(
-                    component, required_qty, component_data, produced_data, config, current_bom,
+                    component, required_qty, component_data, produced_data, config, bom,
                     by_product_data=by_product_data,
-                    source_product=bom_parent, source_qty=current_qty,
+                    source_product=bom_parent, source_qty=qty,
                     warehouse_groups=warehouse_groups, mo_bom_wise_data=mo_bom_wise_data,
                 )
 
@@ -660,7 +660,7 @@ class AdvanceReorderOrderProcess(models.Model):
             )
 
             if product.id not in mo_bom_wise_data:
-                mo_bom_wise_data.update(self._get_bom_wise_mo_count(config, product))
+                mo_bom_wise_data.update(self._get_bom_wise_mo_count(config.warehouse_group_id, product))
 
             self._explode_bom_into_tabs(
                 product, qty, component_data, produced_data, config, line.bom_id,
@@ -669,7 +669,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 mo_bom_wise_data=mo_bom_wise_data,
             )
 
-    def _get_bom_wise_mo_count(self, config, product_ids):
+    def _get_bom_wise_mo_count(self, warehouse_group_id, product_ids):
         """Call get_product_mo_bom_wise once and return {product_id: {bom_id: mo_count}}.
 
         Filters by company, FG/SFG products, their categories, and config warehouses.
@@ -683,7 +683,7 @@ class AdvanceReorderOrderProcess(models.Model):
         company_ids = {self.company_id.id} if self.company_id else {}
         products = set(product_ids.ids)
         category_ids = {}
-        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
+        warehouse_ids = warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -723,22 +723,22 @@ class AdvanceReorderOrderProcess(models.Model):
             return [(bom, quantity)] if bom else []
 
         Bom = self.env['mrp.bom']
-        allocations = []
+        bom_wise_demand = []
         for bom_id, mo_count in bom_counts.items():
             bom = Bom.browse(bom_id)
             if not bom.exists():
                 continue
 
-            allocated_qty = quantity * (mo_count / total_mos)
-            allocated_qty = int(
-                Decimal(str(allocated_qty)).quantize(
+            bom_demand_qty = quantity * (mo_count / total_mos)
+            bom_demand_qty = int(
+                Decimal(str(bom_demand_qty)).quantize(
                     Decimal('1'),
                     rounding=ROUND_HALF_UP,
                 )
             )
-            if allocated_qty > 0:
-                allocations.append((bom, allocated_qty))
-        return allocations
+            if bom_demand_qty > 0:
+                bom_wise_demand.append((bom, bom_demand_qty))
+        return bom_wise_demand
 
     def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
         """Collect by-product qty using parent MO qty × BOM ratio.
@@ -968,7 +968,8 @@ class AdvanceReorderOrderProcess(models.Model):
 
         return 'purchase'
 
-    def _prepare_net_demand_summary_line_vals(self, product, order_qty, demanded_qty, order_action, company_id=None, ):
+    def _prepare_net_demand_summary_line_vals(self, product, order_qty, demanded_qty, order_action, warehouse_group,
+                                              company_id=None, ):
         """Prepare summary line values."""
         weight = max(product.weight or 1.0, 1.0)
         line_volume = order_qty * (product.volume or 0.0) * weight
@@ -996,6 +997,8 @@ class AdvanceReorderOrderProcess(models.Model):
                 "total_volume": line_volume,
                 "to_be_ordered_in_purchase_uom": purchase_qty,
                 "order_action": order_action,
+                "warehouse_group_id": warehouse_group.id,
+
             },
             line_volume,
             line_amount,
@@ -1045,6 +1048,7 @@ class AdvanceReorderOrderProcess(models.Model):
                     order_qty=order_qty,
                     demanded_qty=order_qty,
                     order_action=order_action,
+                    warehouse_group=tab_line.warehouse_group_id,
                 )
             )
             summary_vals.append((0, 0, line_vals))
@@ -1084,6 +1088,7 @@ class AdvanceReorderOrderProcess(models.Model):
                     order_qty=demanded_qty,
                     demanded_qty=demanded_qty,
                     order_action=self._get_order_action(line.product_id),
+                    warehouse_group=line.warehouse_group_id,
                     company_id=company_id,
                 )
             )
@@ -1341,9 +1346,16 @@ class AdvanceReorderOrderProcess(models.Model):
 
         Production = self.env['mrp.production'].with_user(self.user_id).with_company(self.company_id)
         mo_vals_list = []
-        for summary_line in production_summaries:
-            mo_vals_list.append(
-                self._prepare_manufacturing_order_vals_from_summary(summary_line, warehouse_id)
+
+        for config in self.config_ids:
+            production_summaries = production_summaries.filtered(
+                lambda x: x.warehouse_group_id.id == config.warehouse_group_id.id)
+
+            mo_bom_wise_data = self._get_bom_wise_mo_count(config.warehouse_group_id,
+                                                           production_summaries.mapped('product_id'))
+
+            mo_vals_list.extend(
+                self._prepare_manufacturing_order_vals_from_summary(production_summaries, warehouse_id, mo_bom_wise_data)
             )
 
         if not mo_vals_list:
@@ -1354,29 +1366,47 @@ class AdvanceReorderOrderProcess(models.Model):
         Production.create(mo_vals_list)
         return True
 
-    def _prepare_manufacturing_order_vals_from_summary(self, summary_line, warehouse):
-        product = summary_line.product_id
-        bom = self._get_product_bom(product)
-        if not bom:
-            raise UserError(_(
-                'No BOM configured for product %s.',
-                product.display_name,
-            ))
-        picking_type = warehouse.manu_type_id
-        if not picking_type:
-            raise UserError(_(
-                'No manufacturing operation type configured for warehouse %s.',
-                warehouse.display_name,
-            ))
-        return {
-            'product_id': product.id,
-            'product_qty': summary_line.order_qty,
-            'bom_id': bom.id,
-            'picking_type_id': picking_type.id,
-            'company_id': self.company_id.id,
-            'origin': self.name,
-            'reorder_process_id': self.id,
-        }
+    def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse, mo_bom_wise_data):
+        mo_vals_list = []
+        for summary_line in production_summaries:
+            product = summary_line.product_id
+            picking_type = warehouse.manu_type_id
+            if not picking_type:
+                raise UserError(_(
+                    'No manufacturing operation type configured for warehouse %s.',
+                    warehouse.display_name,
+                ))
+
+            if self.calculate_demand_based_on == 'without_bom':
+                bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
+                    product,
+                    summary_line.order_qty,
+                    mo_bom_wise_data=mo_bom_wise_data,
+                )
+
+            if not bom_wise_demand:
+                default_bom = self._get_product_bom(product)
+                bom_wise_demand = [(default_bom, summary_line.order_qty)] if default_bom else []
+
+            if not bom_wise_demand:
+                _logger.warning(
+                    "No BOM found for product %s (ID: %s).",
+                    product.display_name,
+                    product.id,
+                )
+
+            for bom, qty in bom_wise_demand:
+                mo_vals_list.append({
+                    'product_id': product.id,
+                    'product_qty': qty,
+                    'bom_id': bom.id,
+                    'picking_type_id': picking_type.id,
+                    'company_id': self.company_id.id,
+                    'origin': self.name,
+                    'reorder_process_id': self.id,
+                })
+
+        return mo_vals_list
 
     def action_production_count(self):
         self.ensure_one()

@@ -20,3 +20,5 @@ class AdvanceReorderOrderProcessSummary(models.Model):
         help='Defines which document type will be generated for this summary line. '
              'Auto-set from product routes on verify and can be changed before processing.',
     )
+
+    warehouse_group_id = fields.Many2one('stock.warehouse.group', string="Warehouse group")
