@@ -59,10 +59,12 @@ class ProductProduct(models.Model):
 
     @api.depends('reorder_bom_id', 'reorder_bom_type')
     def _compute_is_kit_product(self):
+        """Computes whether the product is configured as a kit product."""
         for product in self:
             product.is_kit_product = (product.reorder_bom_id and product.reorder_bom_type == 'kit')
 
     def _compute_is_kit_component(self):
+        """Computes whether the product is used as a component in any active kit BOM."""
         BomLine = self.env['mrp.bom.line']
 
         for product in self:
@@ -73,6 +75,7 @@ class ProductProduct(models.Model):
             ]))
 
     def get_default_bom(self, company_id=None):
+        """Returns the default active BOM for the product by sequence."""
         self.ensure_one()
 
         domain = [
@@ -100,6 +103,7 @@ class ProductProduct(models.Model):
 
     @api.depends('reorder_product_classification')
     def _compute_demand_planning_type(self):
+        """Computes the demand planning type based on the product classification."""
         for product in self:
             demand_type = (
                 'production_driven'
@@ -109,6 +113,7 @@ class ProductProduct(models.Model):
             product.demand_planning_type = demand_type
 
     def _compute_reorder_product_classification(self):
+        """Classifies the product as Finished Good, Semi-Finished Good, Raw Material, or Other based on its BOM usage."""
         for product in self:
             has_bom = product.bom_ids
             is_component = product.bom_line_ids
@@ -124,11 +129,12 @@ class ProductProduct(models.Model):
 
     @api.depends('reorder_bom_id', 'reorder_bom_id.type')
     def _compute_reorder_bom_type(self):
+        """Computes the custom BOM type from the selected reorder BOM."""
         for product in self:
             product.reorder_bom_type = self.get_bom_type(product.reorder_bom_id)
 
     def get_bom_type(self, bom):
-        """Return the custom BOM type for the given BOM."""
+        """Returns the custom BOM type (Normal, Kit, or Subcontract) for the given BOM."""
         if not bom:
             return False
         if bom.type == 'subcontract':

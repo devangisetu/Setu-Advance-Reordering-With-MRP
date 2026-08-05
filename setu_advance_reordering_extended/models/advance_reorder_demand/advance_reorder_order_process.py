@@ -70,6 +70,7 @@ class AdvanceReorderOrderProcess(models.Model):
 
     @api.onchange('product_ids', 'calculate_demand_based_on')
     def _onchange_product_ids(self):
+        """Updates demand planning type and set the default BOM when products or demand calculation method changes."""
         for product in self.product_ids:
             if not product.demand_planning_type:
                 product._compute_demand_planning_type()
@@ -77,15 +78,18 @@ class AdvanceReorderOrderProcess(models.Model):
                 product.reorder_bom_id = product.get_default_bom()
 
     def _compute_production_count(self):
+        """Computes the total number of linked manufacturing orders."""
         for record in self:
             record.production_count = len(record.production_ids)
 
     def _compute_fg_count(self):
+        """Computes the total number of finished goods (FG) demand lines."""
         for record in self:
             record.fg_count = len(
                 record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good'))
 
     def _compute_sfg_count(self):
+        """Computes the total number of semi-finished goods (SFG) demand lines."""
         for record in self:
             line_count = len(
                 record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'semi_finished_good'))
@@ -93,6 +97,7 @@ class AdvanceReorderOrderProcess(models.Model):
             record.sfg_count = line_count + tbp_count
 
     def _compute_component_count(self):
+        """Computes the total number of component demand lines."""
         for record in self:
             line_count = len(
                 record.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'raw_material'))
@@ -100,6 +105,7 @@ class AdvanceReorderOrderProcess(models.Model):
             record.component_count = line_count + comp_count
 
     def action_view_fg(self):
+        """Opens the Finished Goods (FG) demand calculation lines."""
         self.ensure_one()
         fg_lines = self.line_ids.filtered(lambda l: l.product_id.reorder_product_classification == 'finished_good')
         return {
@@ -113,6 +119,7 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def action_view_sfg(self):
+        """Prepares and opens the Semi-Finished Goods (SFG) demand planning lines."""
         self.ensure_one()
         self.env['advance.reorder.planning.line'].search(
             [('reorder_process_id', '=', self.id), ('line_type', '=', 'sfg'), ]).unlink()
@@ -148,6 +155,7 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def action_view_components(self):
+        """Prepares and opens the Component demand planning lines."""
         self.ensure_one()
         self.env['advance.reorder.planning.line'].search(
             [('reorder_process_id', '=', self.id), ('line_type', '=', 'component'), ]).unlink()
@@ -183,12 +191,14 @@ class AdvanceReorderOrderProcess(models.Model):
 
     @api.depends('summary_ids', 'summary_ids.order_action')
     def _compute_summary_action_flags(self):
+        """Computes whether the summary contains purchase and/or production actions."""
         for record in self:
             actions = set(record.summary_ids.mapped('order_action'))
             record.has_purchase_action_summary = 'purchase' in actions
             record.has_production_action_summary = 'production' in actions
 
     def _get_warehouse_qty_summary(self, product, warehouses):
+        """Calculates the total available, incoming, and outgoing quantities across the selected warehouses."""
         wh_available = sum(
             product.with_context(warehouse_id=warehouse.id).virtual_available
             for warehouse in warehouses
@@ -209,11 +219,8 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def get_sales_data(self, config, line_product_ids, is_sfg=False):
+        """Retrieves sales or forecast demand data for eligible products based on the configured demand source"""
         """"DP"""
-        """
-              added by: Aastha Vora | On: Oct - 15 - 2024 | Task: 998
-              use: use to get sales data on basis of demand_with.
-        """
         sales_driven_products = line_product_ids
         if not is_sfg:
             sales_driven_products = line_product_ids.filtered(
@@ -229,13 +236,7 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def get_production_data(self, config, line_product_ids):
         """"DP"""
-        """Fetch MO consumption history for ADS calculation.
-
-        Calls get_products_production_warehouse_group_wise (DB function) in the
-        same way get_history_sales calls get_products_sales_warehouse_group_wise.
-
-        Returns a list of dicts: product_id, product_name, consumed_qty, ads
-        """
+        """Retrieves production consumption history and ADS for production-driven products."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
@@ -261,6 +262,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return self._cr.dictfetchall()
 
     def get_resupply_data(self, config, line_product_ids):
+        """Retrieves subcontracting resupply history and ADS for production-driven products."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
@@ -290,6 +292,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return self._cr.dictfetchall()
 
     def get_scrap_data(self, config, line_product_ids, ):
+        """Retrieves scrap history and ADS for the selected products."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
@@ -316,8 +319,8 @@ class AdvanceReorderOrderProcess(models.Model):
         return self._cr.dictfetchall()
 
     def _merge_ads_data(self, sales_data, production_data, resupply_data, scrap_data):
-        """Merge sales, production, resupply and scrap data product-wise.
-        ADS is calculated as the average of the available ADS values.
+        """
+        Merges sales, production, resupply, and scrap data into a single product-wise demand summary with calculated ADS.
         """
 
         if not any((sales_data, production_data, resupply_data, scrap_data)):
@@ -384,6 +387,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return merged
 
     def get_kit_product_data(self, config, kit_product_ids):
+        """Retrieves kit component sales history and ADS for kit products."""
         if not self.sales_start_date or not self.sales_end_date or not kit_product_ids:
             return []
 
@@ -407,6 +411,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return self._cr.dictfetchall()
 
     def _prepare_base_line_vals(self, config, product):
+        """Prepares the base values for creating reorder line, including warehouse stock and related stock moves."""
         wh_summary = self._get_warehouse_qty_summary(
             product, config.warehouse_group_id.warehouse_ids
         )
@@ -422,6 +427,9 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, is_mto_route):
+        """
+        Calculates product demand quantities and prepares reorder line values based on demand, stock, and configuration.
+        """
         vals = []
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
         reorder_rounding_method = self.company_id.reorder_rounding_method
@@ -488,16 +496,22 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def action_reorder_confirm(self):
         """"DP"""
-        """Override to merge sales and production consumption ADS per product planning type.
+        """
+        Override to merge sales and production consumption ADS per product planning type.
+        Generates reorder demand lines by collecting, merging, and processing demand data from sales, production,
+        subcontracting, scrap, and kit products.
 
         For each config:
           1. Fetch sales data (via super's get_sales_data).
           2. Fetch production consumption data (via get_production_data).
-          3. Merge both datasets per product demand_planning_type:
-               - sales_driven     → sales data only (unchanged behaviour)
-               - production_driven → production consumption ADS replaces sales ADS
-               - combined         → combined ADS = sales_ads + production_ads
-          4. Pass merged data to prepare_reorder_line_vals as usual.
+          3. Fetch Scrap data (via get_scrap_data).
+          4. Fetch Resupply data (via get_resupply_data).
+          5. Merge all datasets per product demand_planning_type:
+               - sales_driven     → sales data only (unchanged behaviour), adding kit component
+               - production_driven → production consumption(production + resupply) ADS replaces sales ADS
+               - combined         → combined ADS = sales_ads + production_ads + scrap_ads
+          6. Pass merged data to prepare_reorder_line_vals as usual.
+          7. Calculate demand of to be produced product, component and by product.
         """
         self.check_configuration_product()
         vals = []
@@ -532,6 +546,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return True
 
     def _collect_mrp_tab_requirements(self, ):
+        """Generates the To Be Produced, Component Demand, and By-Product lines by exploding product BOMs."""
         produced_data = defaultdict(float)
         component_data = defaultdict(
             lambda: {
@@ -598,6 +613,7 @@ class AdvanceReorderOrderProcess(models.Model):
             bom=None, by_product_data=None,
             parent_product=None, warehouse_groups=None, mo_bom_wise_data={},
     ):
+        """Recursively explodes a product BOM and distributes its requirements into the appropriate MRP tabs."""
         if quantity <= 0:
             return
 
@@ -645,6 +661,7 @@ class AdvanceReorderOrderProcess(models.Model):
             by_product_data=None, source_product=None, source_qty=0,
             warehouse_groups=None, mo_bom_wise_data=None,
     ):
+        """Processes each BOM component based on its product classification."""
         if not product or qty <= 0:
             return
 
@@ -670,9 +687,8 @@ class AdvanceReorderOrderProcess(models.Model):
             )
 
     def _get_bom_wise_mo_count(self, warehouse_group_id, product_ids):
-        """Call get_product_mo_bom_wise once and return {product_id: {bom_id: mo_count}}.
-
-        Filters by company, FG/SFG products, their categories, and config warehouses.
+        """ Call get_product_mo_bom_wise once and return {product_id: {bom_id: mo_count}}.
+            Retrieves BOM-wise manufacturing order counts for products within the selected period.
         """
         if not self.sales_start_date or not self.sales_end_date:
             return {}
@@ -708,7 +724,8 @@ class AdvanceReorderOrderProcess(models.Model):
         return dict(mo_bom_data)
 
     def _get_bom_wise_demand_by_mo_ratio(self, product, quantity, mo_bom_wise_data=None):
-        """Split demand across BOMs using completed MO usage ratios.
+        """
+        Splits product demand across BOMs based on completed manufacturing order ratios.
 
         Returns list of (bom, allocated_qty). Falls back to reorder/default BOM
         when no completed MOs exist for the product in the period.
@@ -741,11 +758,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return bom_wise_demand
 
     def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
-        """Collect by-product qty using parent MO qty × BOM ratio.
-
-        Case 1: parent_mo_qty = reorder line production_out_demand
-        Case 2 (nested SFG): parent_mo_qty = propagated qty from FG explosion
-        """
+        """Collects by-product quantities generated from a BOM based on the parent production quantity."""
         if parent_mo_qty <= 0 or by_product_data is None:
             return
 
@@ -766,6 +779,7 @@ class AdvanceReorderOrderProcess(models.Model):
     def _add_to_by_product_tab(
             self, by_product_data, product, qty, source_product=None, source_product_demand=0.0,
     ):
+        """Adds a by-product entry to the by-product demand collection."""
         if product and qty > 0:
             by_product_data.append({
                 'product_id': product.id,
@@ -775,6 +789,7 @@ class AdvanceReorderOrderProcess(models.Model):
             })
 
     def _add_to_component_tab(self, component_data, product, qty, bom, source_product, source_qty):
+        """Adds a component requirement and its source details to the component demand collection."""
         if not product or qty <= 0:
             return
 
@@ -790,8 +805,8 @@ class AdvanceReorderOrderProcess(models.Model):
         )
 
     def _prepare_to_be_produced_line_vals(self, product, required_qty, bom, source_product, source_qty,
-                                          warehouse_groups,
-                                          config):
+                                          warehouse_groups, config):
+        """Prepares values for creating a "To Be Produced" demand line."""
         warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
         warehouse_qty = self._get_warehouse_qty_summary(
             product, self.env['stock.warehouse'].browse(warehouse_ids)
@@ -859,6 +874,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return produced_line, produced_line.net_demand
 
     def _generate_component_demand_lines(self, config, component_data=None, ):
+        """Creates component demand lines from the accumulated BOM component requirements."""
         if not component_data:
             return
 
@@ -885,6 +901,7 @@ class AdvanceReorderOrderProcess(models.Model):
             })
 
     def _generate_by_product_lines(self, config, by_product_data=None):
+        """Creates by-product demand lines from the collected by-product data."""
         if not by_product_data:
             return
 
@@ -903,15 +920,18 @@ class AdvanceReorderOrderProcess(models.Model):
             })
 
     def _get_product_bom(self, product):
+        """Returns the configured reorder BOM or the product's default BOM."""
         return product.reorder_bom_id or (product.bom_ids[:1] if product.bom_ids else self.env['mrp.bom'])
 
     def action_reorder_reset_to_draft(self):
+        """Clears all generated MRP demand lines and resets the reorder process to draft."""
         self.to_be_produced_line_ids.unlink()
         self.component_demand_line_ids.unlink()
         self.by_product_line_ids.unlink()
         return super().action_reorder_reset_to_draft()
 
     def _get_summary_vals_by_product(self, summary_vals):
+        """Creates a product-wise dictionary from summary line values."""
         return {
             command[2]['product_id']: command[2]
             for command in summary_vals
@@ -919,7 +939,7 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
-        """Return purchase-related details."""
+        """Retrieves vendor MOQ, purchase quantity, and purchase price for a product."""
         vendor_moq = 0
         purchase_qty = 0
         price = product.standard_price or 0.0
@@ -953,7 +973,8 @@ class AdvanceReorderOrderProcess(models.Model):
         return vendor_moq, purchase_qty, price
 
     def _get_order_action(self, product):
-        """Return the default order action for the given product."""
+        """Determines whether a product should be purchased or manufactured based on its routes and classification."""
+
         route_names = set(product.route_ids.mapped('name'))
         if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
             return 'production'
@@ -970,7 +991,7 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def _prepare_net_demand_summary_line_vals(self, product, order_qty, demanded_qty, order_action, warehouse_group,
                                               company_id=None, ):
-        """Prepare summary line values."""
+        """Prepares summary line values for the net demand calculation."""
         weight = max(product.weight or 1.0, 1.0)
         line_volume = order_qty * (product.volume or 0.0) * weight
 
@@ -1020,7 +1041,7 @@ class AdvanceReorderOrderProcess(models.Model):
             tab_lines,
             order_action,
     ):
-        """Append summary lines for products not already present."""
+        """Adds products from MRP tab lines to the reorder summary."""
         summary_by_product = self._get_summary_vals_by_product(summary_vals)
 
         for tab_line in tab_lines:
@@ -1059,6 +1080,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return summary_vals, total_volume, total_amount
 
     def prepare_reorder_demand_summary_vals(self):
+        """Prepares net demand summary lines from the reorder demand lines."""
         summary_vals = []
         total_volume = 0.0
         total_amount = 0.0
@@ -1100,6 +1122,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return summary_vals, total_volume, total_amount
 
     def prepare_reorder_summary_vals(self):
+        """Prepares the complete reorder summary, including demand, production, and component lines."""
         summary_vals, total_volume, total_amount = self.prepare_reorder_demand_summary_vals()
 
         summary_vals, total_volume, total_amount = (
@@ -1121,6 +1144,7 @@ class AdvanceReorderOrderProcess(models.Model):
         )
 
     def get_vendor_product_mapping_dict(self, purchase_summaries):
+        """Groups products by vendor according to the selected vendor selection strategy."""
         product_ids = purchase_summaries.mapped('product_id')
         vendor_product_dict = {}
         if self.vendor_selection_strategy == 'specific_vendor':
@@ -1166,6 +1190,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return vendor_product_dict
 
     def action_create_reorder_purchase_order(self):
+        """Creates purchase orders from purchase summary lines based on the vendor selection strategy."""
         self.ensure_one()
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
@@ -1206,11 +1231,6 @@ class AdvanceReorderOrderProcess(models.Model):
           - Component demand lines / to-be-produced lines that are not present
             in self.line_ids (e.g. raw-material components from BOM explosion).
 
-        For lines WITH a matching reorder line, we delegate to super() so the
-        base module logic (wh_sharing_percentage, moq, etc.) is unchanged.
-
-        For lines WITHOUT a matching reorder line, we build the PO line vals
-        directly from the summary line's order_qty / to_be_ordered_in_purchase_uom.
         """
         partner = partner or self.vendor_id
         if not partner:
@@ -1321,6 +1341,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return po_line_vals
 
     def action_create_reorder_manufacturing_orders(self):
+        """Opens the wizard to select a warehouse for creating manufacturing orders."""
         self.ensure_one()
         wizard = self.env['advance.reorder.mrp.wizard'].create({
             'reorder_process_id': self.id,
@@ -1336,6 +1357,7 @@ class AdvanceReorderOrderProcess(models.Model):
         }
 
     def create_manufacturing_orders(self, warehouse_id):
+        """Creates manufacturing orders from verified production summary lines."""
         self.ensure_one()
         if self.state != 'verified':
             raise UserError(_('Manufacturing orders can only be created from a verified reorder process.'))
@@ -1367,6 +1389,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return True
 
     def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse, mo_bom_wise_data):
+        """Prepares manufacturing order values from production summary lines based on BOM ratio demand."""
         mo_vals_list = []
         for summary_line in production_summaries:
             product = summary_line.product_id
@@ -1409,6 +1432,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return mo_vals_list
 
     def action_production_count(self):
+        """Opens the linked manufacturing orders from the reorder."""
         self.ensure_one()
         action = self.env['ir.actions.actions']._for_xml_id('mrp.mrp_production_action')
         productions = self.mapped('production_ids')

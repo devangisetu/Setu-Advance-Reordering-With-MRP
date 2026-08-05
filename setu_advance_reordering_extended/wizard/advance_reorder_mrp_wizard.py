@@ -25,6 +25,9 @@ class ManufacturingOrderWizard(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """
+        Preloads all production demand lines for manufacturing order generation.
+        """
         records = super(ManufacturingOrderWizard, self).create(vals_list)
 
         for rec in records:
@@ -42,6 +45,7 @@ class ManufacturingOrderWizard(models.TransientModel):
         return records
 
     def action_confirm(self):
+        """Validates the warehouse selection and creates manufacturing orders for the reorder."""
         if not self.warehouse_id:
             raise UserError(_("Please select a warehouse to create manufacturing orders."))
         self.reorder_process_id.create_manufacturing_orders(self.warehouse_id)

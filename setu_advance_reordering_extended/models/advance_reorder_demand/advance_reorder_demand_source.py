@@ -22,7 +22,5 @@ class AdvanceReorderComponentDemandSource(models.Model):
     )
 
     source_qty = fields.Float(string='Source Qty',)
-
     required_qty = fields.Float(string="Required Qty")
-
     bom_id = fields.Many2one(comodel_name="mrp.bom", string="BOM")

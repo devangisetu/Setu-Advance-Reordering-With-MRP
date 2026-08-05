@@ -8,6 +8,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Preloads all purchase demand lines for purchase order generation."""
         records = super().create(vals_list)
         for rec in records:
             if not rec.reorder_process_id:
@@ -22,13 +23,3 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             if not rec.line_ids and purchase_summaries:
                 rec.line_ids = [(0, 0, {'summary_line_id': summary.id}) for summary in purchase_summaries]
         return records
-
-    def action_confirm(self):
-        invalid_lines = self.line_ids.filtered(
-            lambda line: line.summary_line_id.order_action != 'purchase'
-        )
-        if invalid_lines:
-            raise UserError(_(
-                'Only summary lines with action "Generate Purchase Orders" can be included in purchase orders.'
-            ))
-        return super().action_confirm()

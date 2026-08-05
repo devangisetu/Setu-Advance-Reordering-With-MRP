@@ -46,6 +46,7 @@ class AdvanceReorderComponentDemandLine(models.Model):
     warehouse_group_id = fields.Many2one('stock.warehouse.group', string="Warehouse group")
 
     def action_incoming_stock_moves(self):
+        """Opens the pending incoming stock moves for the product across the reorder process warehouses."""
         self.ensure_one()
         warehouse_groups = self.reorder_process_id.config_ids.mapped('warehouse_group_id')
         stock_location_ids = warehouse_groups.mapped('warehouse_ids.lot_stock_id').ids
@@ -61,8 +62,8 @@ class AdvanceReorderComponentDemandLine(models.Model):
         return action
 
     def action_view_source_products(self):
+        """Opens the list of source products contributing to the component demand."""
         self.ensure_one()
-
         return {
             'type': 'ir.actions.act_window',
             'name': _('Source Products'),

@@ -67,11 +67,13 @@ class AdvanceReorderToBeProducedLine(models.Model):
 
     @api.depends('bom_id', 'bom_id.type')
     def _compute_bom_type(self):
+        """Computes the BOM type based on the selected BOM."""
         for record in self:
             record.bom_type = self.env['product.product'].get_bom_type(record.bom_id)
 
 
     def action_incoming_stock_moves(self):
+        """Opens the pending incoming stock moves for the product across the reorder process warehouses."""
         self.ensure_one()
         warehouse_groups = self.reorder_process_id.config_ids.mapped('warehouse_group_id')
         stock_location_ids = warehouse_groups.mapped('warehouse_ids.lot_stock_id').ids
@@ -87,8 +89,8 @@ class AdvanceReorderToBeProducedLine(models.Model):
         return action
 
     def action_view_source_products(self):
+        """Opens the list of source products contributing to the "To Be Produced" demand line."""
         self.ensure_one()
-
         return {
             'type': 'ir.actions.act_window',
             'name': _('Source Products'),
