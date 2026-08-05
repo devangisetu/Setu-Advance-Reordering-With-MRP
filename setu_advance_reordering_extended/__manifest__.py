@@ -24,7 +24,6 @@
         'db_function/get_product_mo_bom_wise.sql',
         'db_function/get_subcontracting_move_warehouse_group_wise.sql',
         'db_function/get_products_scrap_warehouse_group_wise.sql',
-        'db_function/get_kit_product_component_warehouse_group_wise.sql',
         'db_function/get_product_subcontract_history.sql',
         'db_function/get_product_consumption_history.sql',
         'db_function/get_product_production_history.sql',

@@ -62,10 +62,12 @@ class AdvanceReorderOrderProcess(models.Model):
     has_purchase_action_summary = fields.Boolean(
         string='Has Purchase Action Summary',
         compute='_compute_summary_action_flags',
+        store=True,
     )
     has_production_action_summary = fields.Boolean(
         string='Has Production Action Summary',
         compute='_compute_summary_action_flags',
+        store=True,
     )
     show_subcontracting_qty = fields.Boolean(
         string="Show Resupply Qty",
@@ -280,7 +282,7 @@ class AdvanceReorderOrderProcess(models.Model):
             return []
 
         production_driven_products = line_product_ids.filtered(
-            lambda pr: pr.demand_planning_type != 'sales_driven')
+            lambda pr: pr.is_kit_component or  pr.demand_planning_type != 'sales_driven')
         products = set(production_driven_products.ids) if production_driven_products else set()
         if not products:
             return []
@@ -357,23 +359,16 @@ class AdvanceReorderOrderProcess(models.Model):
             production = production_map.get(product_id, {})
             resupply = resupply_map.get(product_id, {})
             scrap = scrap_map.get(product_id, {})
-            product = self.env['product.product'].browse(product_id)
-
             ads_values = []
 
-            if product:
-                # Include Sales ADS unless production driven
-                if (product.is_kit_component or product.demand_planning_type != 'production_driven') and sales:
-                    ads_values.append(sales.get('ads', 0.0))
-
-                # Include Production, Resupply and Scrap ADS unless sales driven
-                if product.demand_planning_type != 'sales_driven':
-                    if production:
-                        ads_values.append(production.get('ads', 0.0))
-                    if resupply:
-                        ads_values.append(resupply.get('ads', 0.0))
-                    if scrap:
-                        ads_values.append(scrap.get('ads', 0.0))
+            if sales:
+                ads_values.append(sales.get('ads', 0.0))
+            if production:
+                ads_values.append(production.get('ads', 0.0))
+            if resupply:
+                ads_values.append(resupply.get('ads', 0.0))
+            if scrap:
+                ads_values.append(scrap.get('ads', 0.0))
 
             avg_ads = sum(ads_values) if ads_values else 0.0
 
@@ -396,30 +391,6 @@ class AdvanceReorderOrderProcess(models.Model):
             })
         return merged
 
-    def get_kit_product_data(self, config, kit_product_ids):
-        """Retrieves kit component sales history and ADS for kit products."""
-        if not self.sales_start_date or not self.sales_end_date or not kit_product_ids:
-            return []
-
-        products = set(kit_product_ids.ids)
-        if not products:
-            return []
-
-        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
-        warehouses = set(warehouse_ids) if warehouse_ids else {}
-        start_date = self.sales_start_date.strftime('%Y-%m-%d')
-        end_date = self.sales_end_date.strftime('%Y-%m-%d')
-
-        query = """
-            Select product_id, product_name,
-                sum(sales_qty) as sales_qty,
-                sum(ads) as ads
-            from get_kit_product_component_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
-            group by product_id, product_name
-        """ % ('{}', products, '{}', warehouses, start_date, end_date)
-        self._cr.execute(query)
-        return self._cr.dictfetchall()
-
     def _prepare_base_line_vals(self, config, product):
         """Prepares the base values for creating reorder line, including warehouse stock and related stock moves."""
         wh_summary = self._get_warehouse_qty_summary(
@@ -436,7 +407,7 @@ class AdvanceReorderOrderProcess(models.Model):
             'stock_move_ids': [(6, 0, moves)],
         }
 
-    def prepare_reorder_line_vals(self, config, demand_data, kit_product_data, is_mto_route):
+    def prepare_reorder_line_vals(self, config, demand_data, is_mto_route):
         """
         Calculates product demand quantities and prepares reorder line values based on demand, stock, and configuration.
         """
@@ -444,7 +415,6 @@ class AdvanceReorderOrderProcess(models.Model):
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
         reorder_rounding_method = self.company_id.reorder_rounding_method
         reorder_round_quantity = self.company_id.reorder_round_quantity
-        demand_data.extend(kit_product_data)
 
         for data in demand_data:
             product = self.env['product.product'].browse(data.get('product_id'))
@@ -504,6 +474,17 @@ class AdvanceReorderOrderProcess(models.Model):
             vals.append((0, 0, reorder_line_vals))
         return vals
 
+    def _get_kit_component(self, products):
+        """Return the component products for the given kit products."""
+        component_products = self.env['product.product']
+
+        for product in products:
+            bom = self._get_product_bom(product)
+            if bom:
+                component_products |= bom.bom_line_ids.mapped('product_id')
+
+        return component_products
+
     def action_reorder_confirm(self):
         """"DP"""
         """
@@ -530,19 +511,17 @@ class AdvanceReorderOrderProcess(models.Model):
         production_data = []
         scrap_data = []
         for config in self.config_ids:
-            line_product_ids = self.product_ids.filtered(lambda x: x.reorder_bom_type != 'kit')
-            kit_product_ids = self.product_ids.filtered(
-                lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id
-            )
-            sales_data = self.get_sales_data(config, line_product_ids, )
+            line_product_ids = self.product_ids.filtered(lambda x: not x.is_kit_product)
+            kit_product_ids = self.product_ids.filtered(lambda x: x.is_kit_product)
+            line_product_ids |= self._get_kit_component(kit_product_ids)
+            sales_data = self.get_sales_data(config, line_product_ids,)
             if self.generate_demand_with == 'history_sales' and line_product_ids:
                 production_data = self.get_production_data(config, line_product_ids)
-                scrap_data = self.get_scrap_data(config, line_product_ids, )
+                scrap_data = self.get_scrap_data(config, line_product_ids,)
                 resupply_data = self.get_resupply_data(config, line_product_ids)
             demand_data = self._merge_ads_data(sales_data, production_data, resupply_data, scrap_data)
-            kit_product_data = self.get_kit_product_data(config, kit_product_ids)
             vals.extend(
-                self.prepare_reorder_line_vals(config, demand_data, kit_product_data, is_mto_route=False))
+                self.prepare_reorder_line_vals(config, demand_data, is_mto_route=False))
         if not self.state == 'inprogress':
             reorder_vals = {'state': 'no_data'}
         vals and reorder_vals.update({'line_ids': vals, 'state': 'inprogress'})
@@ -1000,7 +979,7 @@ class AdvanceReorderOrderProcess(models.Model):
         return 'purchase'
 
     def _prepare_net_demand_summary_line_vals(self, product, order_qty, demanded_qty, order_action, warehouse_group,
-                                              company_id=None, ):
+                                              company_id=None,):
         """Prepares summary line values for the net demand calculation."""
         weight = max(product.weight or 1.0, 1.0)
         line_volume = order_qty * (product.volume or 0.0) * weight
@@ -1064,7 +1043,7 @@ class AdvanceReorderOrderProcess(models.Model):
             if product.reorder_product_classification == "semi_finished_good" and self._is_mto_buy_or_manufacture_product(
                     product):
                 sales_data = self.get_sales_data(tab_line.config_id, product, is_sfg=True)
-                mto_sales_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data, [],
+                mto_sales_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data,
                                                                is_mto_route=True, ) if sales_data else 0.0
                 if mto_sales_qty <= 0:
                     continue
