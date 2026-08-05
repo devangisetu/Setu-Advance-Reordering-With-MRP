@@ -413,8 +413,6 @@ class AdvanceReorderOrderProcess(models.Model):
         """
         vals = []
         reorder_demand_growth = self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
-        reorder_rounding_method = self.company_id.reorder_rounding_method
-        reorder_round_quantity = self.company_id.reorder_round_quantity
 
         for data in demand_data:
             product = self.env['product.product'].browse(data.get('product_id'))
@@ -821,7 +819,7 @@ class AdvanceReorderOrderProcess(models.Model):
             'incoming_qty': warehouse_qty['incoming'],
             'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
             'net_demand': net_demand,
-            'demand_adjustment_qty': demand_adjustment_qty,
+            'demand_adjustment_qty': net_demand,
             'source_line_ids': [
                 (0, 0, {
                     'source_product_id': source_product.id,
@@ -852,7 +850,7 @@ class AdvanceReorderOrderProcess(models.Model):
             match_line.write({
                 'required_qty': match_line.required_qty + qty,
                 'net_demand': net_demand,
-                'demand_adjustment_qty': demand_adjustment_qty,
+                'demand_adjustment_qty': net_demand,
                 'source_line_ids': [
                     (0, 0, {
                         'source_product_id': source_product.id,
@@ -895,7 +893,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 'incoming_qty': warehouse_qty['incoming'],
                 'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
                 'net_demand': net_demand,
-                'demand_adjustment_qty': demand_adjustment_qty,
+                'demand_adjustment_qty': net_demand,
                 'source_line_ids': bom_required_qty.get('source_line_ids'),
             })
 
@@ -1058,7 +1056,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 if mto_sales_qty <= 0:
                     continue
 
-            order_qty = round(tab_line.net_demand)
+            order_qty = round(tab_line.demand_adjustment_qty)
             if order_qty <= 0:
                 continue
 
