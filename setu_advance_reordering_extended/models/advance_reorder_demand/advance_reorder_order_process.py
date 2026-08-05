@@ -438,15 +438,7 @@ class AdvanceReorderOrderProcess(models.Model):
             demand_qty = round(0 if stock_after_transit > expected_sales
                                else expected_sales - stock_after_transit, 2)
             demand_adjustment_qty = demand_qty
-
-            if reorder_round_quantity and not demand_adjustment_qty % reorder_round_quantity == 0.0:
-                if reorder_rounding_method == 'round_up' and not demand_qty == 0.0:
-                    # c2 = (a + b) - (a % b);
-                    demand_adjustment_qty = (demand_qty + reorder_round_quantity) - (
-                            demand_qty % reorder_round_quantity)
-                elif reorder_rounding_method == 'round_down' and not demand_qty == 0.0:
-                    # c1 = a - (a % b);
-                    demand_adjustment_qty = demand_qty - (demand_qty % reorder_round_quantity)
+            demand_adjustment_qty = self._rounding_demand_quantity(demand_adjustment_qty)
 
             if is_mto_route:
                 return round(demand_adjustment_qty, 0)
@@ -473,6 +465,27 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
             vals.append((0, 0, reorder_line_vals))
         return vals
+
+    def _rounding_demand_quantity(self, quantity):
+        """Round quantity based on reorder rounding configuration."""
+        self.ensure_one()
+
+        round_qty = self.company_id.reorder_round_quantity
+        rounding_method = self.company_id.reorder_rounding_method
+
+        if not round_qty or quantity == 0.0:
+            return quantity
+
+        if quantity % round_qty == 0.0:
+            return quantity
+
+        if rounding_method == 'round_up':
+            return (quantity + round_qty) - (quantity % round_qty)
+
+        if rounding_method == 'round_down':
+            return quantity - (quantity % round_qty)
+
+        return quantity
 
     def _get_kit_component(self, products):
         """Return the component products for the given kit products."""
@@ -736,12 +749,6 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
 
             bom_demand_qty = quantity * (mo_count / total_mos)
-            bom_demand_qty = int(
-                Decimal(str(bom_demand_qty)).quantize(
-                    Decimal('1'),
-                    rounding=ROUND_HALF_UP,
-                )
-            )
             if bom_demand_qty > 0:
                 bom_wise_demand.append((bom, bom_demand_qty))
         return bom_wise_demand
@@ -801,6 +808,8 @@ class AdvanceReorderOrderProcess(models.Model):
             product, self.env['stock.warehouse'].browse(warehouse_ids)
         )
         scrap_data = self.get_scrap_data(config, product, )
+        net_demand =  max(0.0, required_qty - warehouse_qty['available'],)
+        demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
         return {
             'reorder_process_id': self.id,
             'config_id': config.id,
@@ -811,10 +820,8 @@ class AdvanceReorderOrderProcess(models.Model):
             'required_qty': required_qty,
             'incoming_qty': warehouse_qty['incoming'],
             'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
-            'net_demand': max(
-                0.0,
-                required_qty - warehouse_qty['available'],
-            ),
+            'net_demand': net_demand,
+            'demand_adjustment_qty': demand_adjustment_qty,
             'source_line_ids': [
                 (0, 0, {
                     'source_product_id': source_product.id,
@@ -837,15 +844,15 @@ class AdvanceReorderOrderProcess(models.Model):
         if match_line:
             match_line = self.to_be_produced_line_ids.filtered(lambda x: x.product_id.id == product.id)
             required_qty = qty
+            net_demand = max(0.0, (match_line.required_qty + qty) - match_line.available_qty, )
+            demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
             if match_line.net_demand <= 0:
                 required_qty = abs(min(0, match_line.available_qty - match_line.required_qty - qty))
 
             match_line.write({
                 'required_qty': match_line.required_qty + qty,
-                'net_demand': max(
-                    0.0,
-                    (match_line.required_qty + qty) - match_line.available_qty,
-                ),
+                'net_demand': net_demand,
+                'demand_adjustment_qty': demand_adjustment_qty,
                 'source_line_ids': [
                     (0, 0, {
                         'source_product_id': source_product.id,
@@ -877,6 +884,8 @@ class AdvanceReorderOrderProcess(models.Model):
             )
             qty = bom_required_qty.get('qty')
             scrap_data = self.get_scrap_data(config, product, )
+            net_demand = max(0.0, (qty - warehouse_qty['available']), )
+            demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
             ComponentLine.create({
                 'reorder_process_id': self.id,
                 'warehouse_group_id': config.warehouse_group_id.id,
@@ -885,7 +894,8 @@ class AdvanceReorderOrderProcess(models.Model):
                 'required_qty': qty,
                 'incoming_qty': warehouse_qty['incoming'],
                 'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
-                'net_demand': max(0.0, (qty - warehouse_qty['available']), ),
+                'net_demand': net_demand,
+                'demand_adjustment_qty': demand_adjustment_qty,
                 'source_line_ids': bom_required_qty.get('source_line_ids'),
             })
 

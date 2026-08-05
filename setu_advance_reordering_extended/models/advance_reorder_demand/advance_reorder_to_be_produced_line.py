@@ -36,6 +36,8 @@ class AdvanceReorderToBeProducedLine(models.Model):
         store=True,
     )
 
+    demand_adjustment_qty = fields.Integer('To be ordered')
+
     bom_id = fields.Many2one(
         'mrp.bom',
         string='Reorder BOM',
