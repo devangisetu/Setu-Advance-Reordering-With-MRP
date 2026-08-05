@@ -67,6 +67,16 @@ class AdvanceReorderOrderProcess(models.Model):
         string='Has Production Action Summary',
         compute='_compute_summary_action_flags',
     )
+    show_subcontracting_qty = fields.Boolean(
+        string="Show Resupply Qty",
+        related='company_id.use_subcontracting_for_demand',
+        store=True,
+    )
+    show_scrap_qty = fields.Boolean(
+        string="Show Scrap Qty",
+        related='company_id.use_scrap_for_demand',
+        store=True,
+    )
 
     @api.onchange('product_ids', 'calculate_demand_based_on')
     def _onchange_product_ids(self):

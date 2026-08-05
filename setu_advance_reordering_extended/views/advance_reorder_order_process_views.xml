@@ -29,6 +29,10 @@
         <field name="arch" type="xml">
             <xpath expr="//field[@name='generate_demand_with']" position="after">
                 <field name="calculate_demand_based_on" readonly="state != 'draft'"/>
+                <field name="has_purchase_action_summary" invisible="1"/>
+                <field name="has_production_action_summary" invisible="1"/>
+                <field name="show_subcontracting_qty" invisible="1"/>
+                <field name="show_scrap_qty" invisible="1"/>
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="attributes">
@@ -36,8 +40,6 @@
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="after">
-                <field name="has_purchase_action_summary" invisible="1"/>
-                <field name="has_production_action_summary" invisible="1"/>
                 <button name="action_create_reorder_manufacturing_orders" string="Create MO" type="object"
                         invisible="state != 'verified' or not has_production_action_summary or production_count > 0"
                         class="btn-primary"/>
@@ -99,9 +101,11 @@
                 <field name="sales_qty" optional="show"/>
                 <field name="sales_return_qty" optional="hide"/>
                 <field name="consumed_qty" optional="show"/>
-                <field name="resupply_qty" optional="show"/>
-                <field name="resupply_return_qty" optional="hide"/>
-                <field name="scrap_qty" optional="show"/>
+                <field name="resupply_qty" optional="show"
+                       column_invisible="parent.show_subcontracting_qty == False"/>
+                <field name="resupply_return_qty" optional="hide"
+                       column_invisible="parent.show_subcontracting_qty == False"/>
+                <field name="scrap_qty" optional="show" column_invisible="not parent.show_scrap_qty"/>
             </xpath>
 
             <page name="reorder_summary" position="before">
