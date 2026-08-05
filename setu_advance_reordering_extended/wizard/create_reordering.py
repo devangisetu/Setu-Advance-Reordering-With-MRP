@@ -108,6 +108,8 @@ class CreateReordering(models.TransientModel):
         self = self.with_context(
             wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
             wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
+            wizard_auto_create_components_orderpoint=self.auto_create_components_orderpoint,
+            wizard_demand_planning_type=self.demand_planning_type,
             wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
         )
         return super().perform_operation()
@@ -115,26 +117,6 @@ class CreateReordering(models.TransientModel):
     def prepare_orderpoint_domain(self):
         self._filter_wizard_products()
         return super().prepare_orderpoint_domain()
-
-    def _update_orderpoint_planning_type(self, orderpoints):
-        if not orderpoints:
-            return
-        orderpoints.write({
-            'auto_create_components_orderpoint': self.auto_create_components_orderpoint,
-            'demand_planning_type': self.demand_planning_type,
-        })
-        orderpoints.update_product_sales_history()
-        for op in orderpoints:
-            op._calculate_lead_time()
-            op.calculate_sales_average_max()
-            op.onchange_average_sale_calculation_base()
-            op.onchange_safety_stock()
-            op.onchange_avg_sale_lead_time()
-            op.onchange_safety_stock()
-        orderpoints.update_order_point_data()
-        orderpoints.with_context(
-            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
-        )._auto_create_components_orderpoint()
 
     def create_reorder_rule(self):
         res = super().create_reorder_rule()
@@ -147,7 +129,9 @@ class CreateReordering(models.TransientModel):
                     break
             if orderpoint_ids:
                 orderpoints = self.env['stock.warehouse.orderpoint'].browse(orderpoint_ids)
-                self._update_orderpoint_planning_type(orderpoints)
+                orderpoints.with_context(
+                    wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+                )._auto_create_components_orderpoint()
         return res
 
     def update_reorder_rule(self):
@@ -161,7 +145,9 @@ class CreateReordering(models.TransientModel):
                     break
             if orderpoint_ids:
                 orderpoints = self.env['stock.warehouse.orderpoint'].browse(orderpoint_ids)
-                self._update_orderpoint_planning_type(orderpoints)
+                orderpoints.with_context(
+                    wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+                )._auto_create_components_orderpoint()
         return res
 
     def update_production_history(self):

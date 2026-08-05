@@ -21,7 +21,7 @@ class StockWarehouseOrderpoint(models.Model):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        if self.company_id and self.company_id.use_subcontracting_for_orderpoint:
+        if self.env.company.use_subcontracting_for_orderpoint:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 
@@ -135,12 +135,12 @@ class StockWarehouseOrderpoint(models.Model):
         return action
 
     def _compute_subcontracting_enabled(self):
-        enabled = self.company_id.use_subcontracting_for_orderpoint or False
+        enabled = self.env.company.use_subcontracting_for_orderpoint or False
         for op in self:
             op.use_subcontracting_for_orderpoint = enabled
 
     def _compute_scrap_enabled(self):
-        enabled = self.company_id.use_scrap_for_orderpoint or False
+        enabled = self.env.company.use_scrap_for_orderpoint or False
         for op in self:
             op.use_scrap_for_orderpoint = enabled
 
@@ -149,6 +149,10 @@ class StockWarehouseOrderpoint(models.Model):
             vals['add_mo_in_lead_calc'] = self.env.context.get('wizard_add_mo_in_lead_calc')
         if 'wizard_add_sc_in_lead_calc' in self.env.context:
             vals['add_sc_in_lead_calc'] = self.env.context.get('wizard_add_sc_in_lead_calc')
+        if 'wizard_auto_create_components_orderpoint' in self.env.context:
+            vals['auto_create_components_orderpoint'] = self.env.context.get('wizard_auto_create_components_orderpoint')
+        if 'wizard_demand_planning_type' in self.env.context:
+            vals['demand_planning_type'] = self.env.context.get('wizard_demand_planning_type')
         if 'warehouse_id' in vals:
             changed_records = self.env['stock.warehouse.orderpoint']
             for record in self:
