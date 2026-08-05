@@ -13,12 +13,12 @@ class CreateReordering(models.TransientModel):
             ('production_history', 'Production Orders'),
             ('consumption_history', 'Consumption History'),
         ]
-        if self.company_id.use_subcontracting_for_orderpoint:
+        if self.env.company.use_subcontracting_for_orderpoint:
             options.extend([
                 ('resupply_history', 'Resupply History'),
                 ('subcontract_history', 'Subcontracting Orders'),
             ])
-        if self.company_id.use_scrap_for_orderpoint:
+        if self.env.company.use_scrap_for_orderpoint:
             options.append(('scrap_history', 'Scrap History'))
         return options
 
@@ -36,7 +36,7 @@ class CreateReordering(models.TransientModel):
             ('od_default', 'Odoo Default'),
             ('mrp', 'Production Order'),
         ]
-        if self.company_id.use_subcontracting_for_orderpoint:
+        if self.env.company.use_subcontracting_for_orderpoint:
             options.append(('subcontracting', 'Subcontract Order'))
         return options
 
@@ -64,6 +64,10 @@ class CreateReordering(models.TransientModel):
         "Update Component Orderpoint",
         default=False,
         help="If enabled, product selection will only show products whose orderpoints have no parent product orderpoints."
+    )
+    component_planning_warehouse_id = fields.Many2one(
+        "stock.warehouse",
+        string="Component Planning Warehouse"
     )
     product_domain_ids = fields.Many2many(
         'product.product',
@@ -104,6 +108,7 @@ class CreateReordering(models.TransientModel):
         self = self.with_context(
             wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
             wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
+            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
         )
         return super().perform_operation()
 
@@ -127,7 +132,9 @@ class CreateReordering(models.TransientModel):
             op.onchange_avg_sale_lead_time()
             op.onchange_safety_stock()
         orderpoints.update_order_point_data()
-        orderpoints._auto_create_components_orderpoint()
+        orderpoints.with_context(
+            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+        )._auto_create_components_orderpoint()
 
     def create_reorder_rule(self):
         res = super().create_reorder_rule()

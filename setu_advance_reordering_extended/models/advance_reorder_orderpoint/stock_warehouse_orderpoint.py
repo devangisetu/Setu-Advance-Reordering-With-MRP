@@ -137,19 +137,18 @@ class StockWarehouseOrderpoint(models.Model):
     def _compute_subcontracting_enabled(self):
         enabled = self.company_id.use_subcontracting_for_orderpoint or False
         for op in self:
-            op.subcontracting_enabled = enabled
+            op.use_subcontracting_for_orderpoint = enabled
 
     def _compute_scrap_enabled(self):
         enabled = self.company_id.use_scrap_for_orderpoint or False
         for op in self:
-            op.scrap_enabled = enabled
+            op.use_scrap_for_orderpoint = enabled
 
     def write(self, vals):
         if 'wizard_add_mo_in_lead_calc' in self.env.context:
             vals['add_mo_in_lead_calc'] = self.env.context.get('wizard_add_mo_in_lead_calc')
         if 'wizard_add_sc_in_lead_calc' in self.env.context:
             vals['add_sc_in_lead_calc'] = self.env.context.get('wizard_add_sc_in_lead_calc')
-
         if 'warehouse_id' in vals:
             changed_records = self.env['stock.warehouse.orderpoint']
             for record in self:
@@ -165,7 +164,6 @@ class StockWarehouseOrderpoint(models.Model):
                     )
                     record.message_post(body=body)
                     changed_records |= record
-
             res = super().write(vals)
             if changed_records:
                 super(StockWarehouseOrderpoint, changed_records).write({'warehouse_changed': True})
@@ -191,7 +189,7 @@ class StockWarehouseOrderpoint(models.Model):
                 lambda x: start_date <= x.start_date <= end_date)
             resupply_data = self.product_resupply_history_ids.filtered(
                 lambda x: start_date <= x.start_date <= end_date)
-            if self.scrap_enabled:
+            if self.use_scrap_for_orderpoint:
                 scrap_data = self.product_scrap_history_ids.filtered(
                     lambda x: start_date <= x.start_date <= end_date)
                 sales_qty_sum += sum(scrap_data.mapped('scrap_qty'))
@@ -354,82 +352,97 @@ class StockWarehouseOrderpoint(models.Model):
                         max_lead_times.append(max(subcontract_delays))
             if source_averages:
                 avg_lead_time = round(mean(source_averages)) or 1
-                max_lead_time = round(max(max_lead_times)) if max_lead_times else 1
+                max_lead_time = max(round(max(max_lead_times)) if max_lead_times else 1, avg_lead_time)
                 orderpoint.write({
                     'avg_lead_time': avg_lead_time,
                     'max_lead_time': max_lead_time
                 })
         return True
 
+    def _get_reorder_boms(self, product):
+        if product.reorder_bom_id:
+            return product.reorder_bom_id
+        boms = self.env['mrp.bom'].search([
+            '|',
+            ('product_id', '=', product.id),
+            '&',
+            ('product_tmpl_id', '=', product.product_tmpl_id.id),
+            ('product_id', '=', False)
+        ])
+        return boms
+
+    def _is_mto_product(self, product):
+        mto_route = self.env.ref('stock.route_warehouse0_mto', raise_if_not_found=False)
+        if mto_route:
+            product_routes = product.route_ids | product.product_tmpl_id.route_ids
+            return mto_route.id in product_routes.ids
+        return False
+
+    def _find_or_create_component_orderpoint(self, product, parent_op, target_wh_id, target_loc_id):
+        existing_op = self.env['stock.warehouse.orderpoint'].search([
+            ('product_id', '=', product.id),
+            ('warehouse_id', '=', target_wh_id),
+            ('company_id', '=', parent_op.company_id.id),
+        ], limit=1)
+        if existing_op:
+            if parent_op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
+                existing_op.write({'auto_create_components_orderpoint': True})
+            if parent_op.id not in existing_op.parent_orderpoint_ids.ids:
+                existing_op.write({'parent_orderpoint_ids': [(4, parent_op.id)]})
+            return existing_op
+        create_vals = {
+            'product_id': product.id,
+            'warehouse_id': target_wh_id,
+            'location_id': target_loc_id,
+            'company_id': parent_op.company_id.id,
+            'route_id': parent_op.route_id.id if (parent_op.route_id and target_wh_id == parent_op.warehouse_id.id) else False,
+            'document_creation_option': parent_op.document_creation_option,
+            'consider_current_period_sales': parent_op.consider_current_period_sales,
+            'buffer_days': parent_op.buffer_days,
+            'average_sale_calculation_base': parent_op.average_sale_calculation_base,
+            'add_purchase_in_lead_calc': parent_op.add_purchase_in_lead_calc,
+            'add_iwt_in_lead_calc': parent_op.add_iwt_in_lead_calc,
+            'add_mo_in_lead_calc': parent_op.add_mo_in_lead_calc,
+            'add_sc_in_lead_calc': parent_op.add_sc_in_lead_calc,
+            'demand_planning_type': parent_op.demand_planning_type,
+            'qty_multiple': parent_op.qty_multiple,
+            'visibility_days': parent_op.visibility_days,
+            'trigger': 'auto',
+            'auto_create_components_orderpoint': parent_op.auto_create_components_orderpoint,
+            'parent_orderpoint_ids': [(4, parent_op.id)],
+        }
+        return self.env['stock.warehouse.orderpoint'].create(create_vals)
+
     def _auto_create_components_orderpoint(self):
         if self._context.get('prevent_component_recursion'):
             return
-        
         to_process = list(self)
         processed_products = set()
         all_affected_orderpoints = self.env['stock.warehouse.orderpoint']
-        
+        wizard_wh_id = self.env.context.get('wizard_component_planning_warehouse_id')
+        wizard_wh = self.env['stock.warehouse'].browse(wizard_wh_id) if wizard_wh_id else False
         while to_process:
             op = to_process.pop(0)
             if not op.auto_create_components_orderpoint or not op.product_id or op.product_id.id in processed_products:
                 continue
-            
             processed_products.add(op.product_id.id)
-            
-            bom_dict = self.env['mrp.bom']._bom_find(op.product_id, company_id=op.company_id.id)
-            bom = bom_dict.get(op.product_id)
-            if not bom:
+            boms = self._get_reorder_boms(op.product_id)
+            if not boms:
                 continue
-            
-            for line in bom.bom_line_ids:
-                product = line.product_id
-                if not product or not product.active or product.type == 'combo' or not product.is_storable:
-                    continue
-                
-                existing_op = self.env['stock.warehouse.orderpoint'].search([
-                    ('product_id', '=', product.id),
-                    ('warehouse_id', '=', op.warehouse_id.id),
-                    ('location_id', '=', op.location_id.id),
-                    ('company_id', '=', op.company_id.id),
-                ], limit=1)
-                
-                if existing_op:
-                    if op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
-                        existing_op.write({'auto_create_components_orderpoint': True})
-                    comp_op = existing_op
-                else:
-                    create_vals = {
-                        'product_id': product.id,
-                        'warehouse_id': op.warehouse_id.id,
-                        'location_id': op.location_id.id,
-                        'company_id': op.company_id.id,
-                        'route_id': op.route_id.id if op.route_id else False,
-                        'document_creation_option': op.document_creation_option,
-                        'consider_current_period_sales': op.consider_current_period_sales,
-                        'buffer_days': op.buffer_days,
-                        'average_sale_calculation_base': op.average_sale_calculation_base,
-                        'add_purchase_in_lead_calc': op.add_purchase_in_lead_calc,
-                        'add_iwt_in_lead_calc': op.add_iwt_in_lead_calc,
-                        'add_mo_in_lead_calc': op.add_mo_in_lead_calc,
-                        'add_sc_in_lead_calc': op.add_sc_in_lead_calc,
-                        'demand_planning_type': op.demand_planning_type,
-                        'qty_multiple': op.qty_multiple,
-                        'visibility_days': op.visibility_days,
-                        'trigger': 'auto',
-                        'auto_create_components_orderpoint': op.auto_create_components_orderpoint,
-                    }
-                    comp_op = self.env['stock.warehouse.orderpoint'].create(create_vals)
-                
-                all_affected_orderpoints |= comp_op
-                
-                if comp_op.product_id.id not in processed_products:
-                    to_process.append(comp_op)
-            
+            for bom in boms:
+                for line in bom.bom_line_ids:
+                    product = line.product_id
+                    if not product or not product.active or product.type == 'combo' or not product.is_storable:
+                        continue
+                    if self._is_mto_product(product):
+                        continue
+                    target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
+                    target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
+                    comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
+                    all_affected_orderpoints |= comp_op
+                    if comp_op.product_id.id not in processed_products:
+                        to_process.append(comp_op)
         if all_affected_orderpoints:
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_purchase_history()
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_iwt_history()
-            all_affected_orderpoints.with_context(prevent_component_recursion=True).update_product_sales_history()
-            
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
 
@@ -487,7 +500,7 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_iwt_history()
             self.update_product_production_history()
             self.update_product_subcontract_history()
-            if self.scrap_enabled:
+            if self.use_scrap_for_orderpoint:
                 self.update_product_scrap_history()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
