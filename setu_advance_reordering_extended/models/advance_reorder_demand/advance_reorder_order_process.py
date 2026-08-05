@@ -245,7 +245,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not products:
             return []
 
-        warehouse_ids = self._get_warehouse_ids(config)
+        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -273,7 +273,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not products:
             return []
 
-        warehouse_ids = self._get_warehouse_ids(config)
+        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -300,7 +300,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not products:
             return []
 
-        warehouse_ids = self._get_warehouse_ids(config)
+        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -391,7 +391,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if not products:
             return []
 
-        warehouse_ids = self._get_warehouse_ids(config)
+        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -510,7 +510,7 @@ class AdvanceReorderOrderProcess(models.Model):
             kit_product_ids = self.product_ids.filtered(
                 lambda x: x.reorder_bom_type == 'kit' and x.reorder_bom_id
             )
-            sales_data = self.get_sales_data(config, line_product_ids,)
+            sales_data = self.get_sales_data(config, line_product_ids, )
             if self.generate_demand_with == 'history_sales' and line_product_ids:
                 production_data = self.get_production_data(config, line_product_ids)
                 scrap_data = self.get_scrap_data(config, line_product_ids, )
@@ -531,7 +531,7 @@ class AdvanceReorderOrderProcess(models.Model):
             self._collect_mrp_tab_requirements()
         return True
 
-    def _collect_mrp_tab_requirements(self,):
+    def _collect_mrp_tab_requirements(self, ):
         produced_data = defaultdict(float)
         component_data = defaultdict(
             lambda: {
@@ -565,8 +565,8 @@ class AdvanceReorderOrderProcess(models.Model):
                     continue
 
                 if (use_bom
-                    and product.reorder_product_classification in ('finished_good', 'semi_finished_good')
-                    and not product.reorder_bom_id
+                        and product.reorder_product_classification in ('finished_good', 'semi_finished_good')
+                        and not product.reorder_bom_id
                 ):
                     _logger.warning(
                         "Reorder BOM not found for product '%s' (ID: %s). Skipping demand generation.",
@@ -589,10 +589,9 @@ class AdvanceReorderOrderProcess(models.Model):
                         mo_bom_wise_data=mo_bom_wise_data,
                     )
 
-            component_data =  dict(component_data)
-            self._generate_component_demand_lines(config, component_data,)
+            component_data = dict(component_data)
+            self._generate_component_demand_lines(config, component_data, )
             self._generate_by_product_lines(config, by_product_data)
-
 
     def _explode_bom_into_tabs(
             self, product, quantity, component_data, produced_data, config,
@@ -623,7 +622,7 @@ class AdvanceReorderOrderProcess(models.Model):
         bom_parent = parent_product or product
 
         for current_bom, current_qty in bom_allocations:
-            self._collect_bom_by_products(product, current_qty, by_product_data, bom=current_bom,)
+            self._collect_bom_by_products(product, current_qty, by_product_data, bom=current_bom, )
 
             bom_qty = current_bom.product_qty or 1.0
 
@@ -683,8 +682,8 @@ class AdvanceReorderOrderProcess(models.Model):
 
         company_ids = {self.company_id.id} if self.company_id else {}
         products = set(product_ids.ids)
-        category_ids =  {}
-        warehouse_ids = self._get_warehouse_ids(config)
+        category_ids = {}
+        warehouse_ids = config.warehouse_group_id.warehouse_ids.ids
         warehouses = set(warehouse_ids) if warehouse_ids else {}
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
@@ -704,7 +703,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 continue
             mo_ids = row.get('mo_ids') or []
             mo_bom_data[product_id][bom_id] = (
-                mo_bom_data[product_id].get(bom_id, 0) + len(mo_ids)
+                    mo_bom_data[product_id].get(bom_id, 0) + len(mo_ids)
             )
         return dict(mo_bom_data)
 
@@ -775,7 +774,6 @@ class AdvanceReorderOrderProcess(models.Model):
                 'quantity': qty,
             })
 
-
     def _add_to_component_tab(self, component_data, product, qty, bom, source_product, source_qty):
         if not product or qty <= 0:
             return
@@ -785,13 +783,14 @@ class AdvanceReorderOrderProcess(models.Model):
         component['source_line_ids'].append(
             (0, 0, {
                 'source_product_id': source_product.id,
-                'bom_id':bom.id,
+                'bom_id': bom.id,
                 'source_qty': source_qty,
                 'required_qty': qty,
             })
         )
 
-    def _prepare_to_be_produced_line_vals(self, product, required_qty, bom, source_product, source_qty, warehouse_groups,
+    def _prepare_to_be_produced_line_vals(self, product, required_qty, bom, source_product, source_qty,
+                                          warehouse_groups,
                                           config):
         warehouse_ids = warehouse_groups.mapped('warehouse_ids').ids
         warehouse_qty = self._get_warehouse_qty_summary(
@@ -815,7 +814,7 @@ class AdvanceReorderOrderProcess(models.Model):
             'source_line_ids': [
                 (0, 0, {
                     'source_product_id': source_product.id,
-                    'bom_id':bom.id,
+                    'bom_id': bom.id,
                     'source_qty': source_qty,
                     'required_qty': required_qty,
                 })
@@ -859,7 +858,7 @@ class AdvanceReorderOrderProcess(models.Model):
         produced_line = ProducedLine.create(vals)
         return produced_line, produced_line.net_demand
 
-    def _generate_component_demand_lines(self, config, component_data=None,):
+    def _generate_component_demand_lines(self, config, component_data=None, ):
         if not component_data:
             return
 
@@ -872,7 +871,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 product, self.env['stock.warehouse'].browse(warehouse_ids)
             )
             qty = bom_required_qty.get('qty')
-            scrap_data = self.get_scrap_data(config, product,)
+            scrap_data = self.get_scrap_data(config, product, )
             ComponentLine.create({
                 'reorder_process_id': self.id,
                 'warehouse_group_id': config.warehouse_group_id.id,
@@ -903,13 +902,6 @@ class AdvanceReorderOrderProcess(models.Model):
                 'quantity': quantity,
             })
 
-    def _get_summary_lines_for_action(self, action):
-        self.ensure_one()
-        return self.summary_ids.filtered(lambda summary: summary.order_action == action)
-
-    def _get_warehouse_ids(self, config):
-        return config.warehouse_group_id.warehouse_ids.ids
-
     def _get_product_bom(self, product):
         return product.reorder_bom_id or (product.bom_ids[:1] if product.bom_ids else self.env['mrp.bom'])
 
@@ -925,13 +917,6 @@ class AdvanceReorderOrderProcess(models.Model):
             for command in summary_vals
             if command[0] == 0 and command[2].get('product_id')
         }
-
-    def _get_summary_company_id(self):
-        config = self.config_ids[:1]
-        if not config or not config.warehouse_group_id:
-            return self.env.company
-        warehouse = config.warehouse_group_id.warehouse_ids[:1]
-        return warehouse.company_id if warehouse else self.env.company
 
     def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
         """Return purchase-related details."""
@@ -988,7 +973,7 @@ class AdvanceReorderOrderProcess(models.Model):
         weight = max(product.weight or 1.0, 1.0)
         line_volume = order_qty * (product.volume or 0.0) * weight
 
-        company_id = company_id or self._get_summary_company_id()
+        company_id = company_id or self.env.company
 
         vendor_moq = 0
         purchase_qty = 0
@@ -1046,7 +1031,7 @@ class AdvanceReorderOrderProcess(models.Model):
                     product):
                 sales_data = self.get_sales_data(tab_line.config_id, product, is_sfg=True)
                 mto_sales_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data, [],
-                                                      is_mto_route=True, ) if sales_data else 0.0
+                                                               is_mto_route=True, ) if sales_data else 0.0
                 if mto_sales_qty <= 0:
                     continue
 
@@ -1091,11 +1076,7 @@ class AdvanceReorderOrderProcess(models.Model):
             line.wh_sharing_percentage = round(
                 (line.demand_adjustment_qty / demanded_qty) * 100
             )
-            warehouse = (
-                    lines[0].warehouse_group_id
-                    and lines[0].warehouse_group_id[0].warehouse_ids[:1]
-            )
-            company_id = warehouse.company_id if warehouse else False
+            company_id = self.company_id
 
             line_vals, line_volume, line_amount = (
                 self._prepare_net_demand_summary_line_vals(
@@ -1148,7 +1129,7 @@ class AdvanceReorderOrderProcess(models.Model):
             for product in product_ids:
                 seller = product.with_context({
                     'sort_by': self.vendor_selection_strategy,
-                    'op_company': self.user_id.company_id,
+                    'op_company': self.company_id,
                 })._select_seller(quantity=None)
                 if not seller or not seller.partner_id:
                     products_without_vendor |= product
@@ -1171,7 +1152,7 @@ class AdvanceReorderOrderProcess(models.Model):
             for product in product_ids:
                 seller = product.with_context({
                     'sort_by': self.vendor_selection_strategy,
-                    'op_company': self.user_id.company_id,
+                    'op_company': self.company_id,
                 })._select_seller(quantity=None)
                 if not seller or not seller.partner_id:
                     continue
@@ -1181,7 +1162,7 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def action_create_reorder_purchase_order(self):
         self.ensure_one()
-        purchase_summaries = self._get_summary_lines_for_action('purchase')
+        purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
 
@@ -1212,25 +1193,6 @@ class AdvanceReorderOrderProcess(models.Model):
             self.write({'state': 'done'})
         return True
 
-    def action_open_po_vendor_wizard(self):
-        self.ensure_one()
-        purchase_summaries = self._get_summary_lines_for_action('purchase')
-        if not purchase_summaries:
-            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
-        return super().action_open_po_vendor_wizard()
-
-    def create_purchase_order(self, default_warehouse, warehouse_group_id, partner=None, summary_lines=None):
-        summaries = summary_lines if summary_lines is not None else self.summary_ids
-        summaries = summaries.filtered(lambda line: line.order_action == 'purchase')
-        if not summaries:
-            return True
-        return super().create_purchase_order(
-            default_warehouse,
-            warehouse_group_id,
-            partner=partner,
-            summary_lines=summaries,
-        )
-
     def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
         """Override to handle summary lines that have no matching reorder line.
 
@@ -1250,7 +1212,7 @@ class AdvanceReorderOrderProcess(models.Model):
             raise UserError(_('A vendor is required to prepare purchase order lines.'))
 
         summaries = summary_lines if summary_lines is not None else self.summary_ids
-        company_for_tax = warehouse_group_id.warehouse_ids[:1].company_id or self.env.company
+        company_for_tax = self.company_id or self.env.company
 
         # Split summaries into two buckets:
         #   - backed_summaries: product exists in line_ids for this warehouse_group → use super()
@@ -1302,7 +1264,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 partner_id=partner.id,
             )
 
-            company_id = warehouse_group_id.warehouse_ids[:1].company_id or False
+            company_id = self.company_id or False
 
             if company_id:
                 ps_info = product_id.seller_ids.filtered(
@@ -1353,12 +1315,44 @@ class AdvanceReorderOrderProcess(models.Model):
 
         return po_line_vals
 
-    def _get_default_mo_warehouse(self):
+    def action_create_reorder_manufacturing_orders(self):
         self.ensure_one()
-        config = self.config_ids[:1]
-        if not config or not config.default_warehouse_id:
-            raise UserError(_('No default warehouse configured for manufacturing orders.'))
-        return config.default_warehouse_id
+        wizard = self.env['advance.reorder.mrp.wizard'].create({
+            'reorder_process_id': self.id,
+        })
+        return {
+            'name': _('Select Warehouse To Create Manufacturing Order'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.mrp.wizard',
+            'view_mode': 'form',
+            'res_id': wizard.id,
+            'target': 'new',
+            'context': dict(self.env.context),
+        }
+
+    def create_manufacturing_orders(self, warehouse_id):
+        self.ensure_one()
+        if self.state != 'verified':
+            raise UserError(_('Manufacturing orders can only be created from a verified reorder process.'))
+        production_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'production' and summary.order_qty > 0)
+        if self.production_ids:
+            raise UserError(_('Manufacturing orders have already been created for this reorder process.'))
+
+        Production = self.env['mrp.production'].with_user(self.user_id).with_company(self.company_id)
+        mo_vals_list = []
+        for summary_line in production_summaries:
+            mo_vals_list.append(
+                self._prepare_manufacturing_order_vals_from_summary(summary_line, warehouse_id)
+            )
+
+        if not mo_vals_list:
+            raise UserError(_(
+                'No manufacturing orders to create. '
+            ))
+
+        Production.create(mo_vals_list)
+        return True
 
     def _prepare_manufacturing_order_vals_from_summary(self, summary_line, warehouse):
         product = summary_line.product_id
@@ -1379,39 +1373,10 @@ class AdvanceReorderOrderProcess(models.Model):
             'product_qty': summary_line.order_qty,
             'bom_id': bom.id,
             'picking_type_id': picking_type.id,
-            'company_id': warehouse.company_id.id,
+            'company_id': self.company_id.id,
             'origin': self.name,
             'reorder_process_id': self.id,
         }
-
-    def action_create_manufacturing_orders(self):
-        self.ensure_one()
-        if self.state != 'verified':
-            raise UserError(_('Manufacturing orders can only be created from a verified reorder process.'))
-        production_summaries = self._get_summary_lines_for_action('production')
-        if not production_summaries:
-            raise UserError(_('No summary lines are set to Generate Production Orders.'))
-        if self.production_ids:
-            raise UserError(_('Manufacturing orders have already been created for this reorder process.'))
-
-        warehouse = self._get_default_mo_warehouse()
-        Production = self.env['mrp.production'].with_user(self.user_id).with_company(warehouse.company_id)
-        mo_vals_list = []
-        for summary_line in production_summaries:
-            if summary_line.order_qty <= 0:
-                continue
-            mo_vals_list.append(
-                self._prepare_manufacturing_order_vals_from_summary(summary_line, warehouse)
-            )
-
-        if not mo_vals_list:
-            raise UserError(_(
-                'No manufacturing orders to create. '
-                'All production summary lines have zero quantity to order.'
-            ))
-
-        Production.create(mo_vals_list)
-        return True
 
     def action_production_count(self):
         self.ensure_one()

@@ -9,4 +9,5 @@ access_product_consumption_history,product.consumption.history,model_product_con
 access_product_resupply_history,product.resupply.history,model_product_resupply_history,base.group_user,1,1,1,1
 access_advance_reorder_planning_line,advance.reorder.planning.line,model_advance_reorder_planning_line,base.group_user,1,1,1,1
 access_product_scrap_history,product.scrap.history,model_product_scrap_history,base.group_user,1,1,1,1
-
+access_advance_reorder_mrp_wizard,advance.reorder.mrp.wizard,model_advance_reorder_mrp_wizard,,1,1,1,1
+access_advance_reorder_mrp_wizard_line,advance.reorder.mrp.wizard.line,model_advance_reorder_mrp_wizard_line,,1,1,1,1

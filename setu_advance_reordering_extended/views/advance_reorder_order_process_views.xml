@@ -38,7 +38,7 @@
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="after">
                 <field name="has_purchase_action_summary" invisible="1"/>
                 <field name="has_production_action_summary" invisible="1"/>
-                <button name="action_create_manufacturing_orders" string="Create MO" type="object"
+                <button name="action_create_reorder_manufacturing_orders" string="Create MO" type="object"
                         invisible="state != 'verified' or not has_production_action_summary or production_count > 0"
                         class="btn-primary"/>
             </xpath>

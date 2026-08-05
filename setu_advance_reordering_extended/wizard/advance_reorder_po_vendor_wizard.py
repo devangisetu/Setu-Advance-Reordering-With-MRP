@@ -12,7 +12,10 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         for rec in records:
             if not rec.reorder_process_id:
                 continue
-            purchase_summaries = rec.reorder_process_id._get_summary_lines_for_action('purchase')
+            purchase_summaries = rec.reorder_process_id.summary_ids.filtered(
+                lambda summary: summary.order_action == 'purchase')
+            if not purchase_summaries:
+                raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
             rec.line_ids.filtered(
                 lambda line: line.summary_line_id not in purchase_summaries
             ).unlink()
@@ -21,9 +24,6 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         return records
 
     def action_confirm(self):
-        purchase_summaries = self.reorder_process_id._get_summary_lines_for_action('purchase')
-        if not purchase_summaries:
-            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
         invalid_lines = self.line_ids.filtered(
             lambda line: line.summary_line_id.order_action != 'purchase'
         )
