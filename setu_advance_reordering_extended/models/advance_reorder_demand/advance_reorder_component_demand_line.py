@@ -36,7 +36,7 @@ class AdvanceReorderComponentDemandLine(models.Model):
         store=True,
     )
 
-    demand_adjustment_qty = fields.Integer('To be ordered')
+    demand_adjustment_qty = fields.Integer(string='To be ordered')
     scrap_qty = fields.Float(string='Scrap Qty',)
 
     source_line_ids = fields.One2many(
