@@ -393,14 +393,23 @@ class StockWarehouseOrderpoint(models.Model):
         return bool(boms)
 
     def _find_or_create_component_orderpoint(self, product, parent_op, target_wh_id, target_loc_id):
+        if parent_op.document_creation_option == 'od_default':
+            doc_option = 'od_default'
+        else:
+            doc_option = 'po' if not self._has_bom(product) else parent_op.document_creation_option
         existing_op = self.env['stock.warehouse.orderpoint'].search([
             ('product_id', '=', product.id),
             ('warehouse_id', '=', target_wh_id),
             ('company_id', '=', parent_op.company_id.id),
         ], limit=1)
         if existing_op:
+            write_vals = {}
             if parent_op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
-                existing_op.write({'auto_create_components_orderpoint': True})
+                write_vals['auto_create_components_orderpoint'] = True
+            if existing_op.document_creation_option != doc_option:
+                write_vals['document_creation_option'] = doc_option
+            if write_vals:
+                existing_op.write(write_vals)
             if parent_op.id not in existing_op.parent_orderpoint_ids.ids:
                 existing_op.write({'parent_orderpoint_ids': [(4, parent_op.id)]})
             return existing_op
@@ -410,7 +419,7 @@ class StockWarehouseOrderpoint(models.Model):
             'location_id': target_loc_id,
             'company_id': parent_op.company_id.id,
             'route_id': parent_op.route_id.id if (parent_op.route_id and target_wh_id == parent_op.warehouse_id.id) else False,
-            'document_creation_option': parent_op.document_creation_option,
+            'document_creation_option': doc_option,
             'consider_current_period_sales': parent_op.consider_current_period_sales,
             'buffer_days': parent_op.buffer_days,
             'average_sale_calculation_base': parent_op.average_sale_calculation_base,
