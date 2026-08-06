@@ -382,6 +382,16 @@ class StockWarehouseOrderpoint(models.Model):
             return mto_route.id in product_routes.ids
         return False
 
+    def _has_bom(self, product):
+        boms = self.env['mrp.bom'].search([
+            '|',
+            ('product_id', '=', product.id),
+            '&',
+            ('product_tmpl_id', '=', product.product_tmpl_id.id),
+            ('product_id', '=', False)
+        ], limit=1)
+        return bool(boms)
+
     def _find_or_create_component_orderpoint(self, product, parent_op, target_wh_id, target_loc_id):
         existing_op = self.env['stock.warehouse.orderpoint'].search([
             ('product_id', '=', product.id),
@@ -440,8 +450,12 @@ class StockWarehouseOrderpoint(models.Model):
                         continue
                     if self._is_mto_product(product):
                         continue
-                    target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
-                    target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
+                    if self._has_bom(product):
+                        target_wh_id = op.warehouse_id.id
+                        target_loc_id = op.location_id.id
+                    else:
+                        target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
+                        target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
                     comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
                     all_affected_orderpoints |= comp_op
                     if comp_op.product_id.id not in processed_products:
