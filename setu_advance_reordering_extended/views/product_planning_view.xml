@@ -6,10 +6,10 @@
             <field name="name">product.product.tree</field>
             <field name="model">product.product</field>
             <field name="arch" type="xml">
-                <list string="Products" editable="bottom">
+                <list string="Products" create="false" editable="bottom">
                     <field name="name"/>
                     <field name="product_tmpl_id" column_invisible="True"/>
-                    <field name="reorder_bom_id" readonly="False"/>
+                    <field name="reorder_bom_id" readonly="False" options="{'no_create': True,}"/>
                     <field name="demand_planning_type"/>
                 </list>
             </field>
