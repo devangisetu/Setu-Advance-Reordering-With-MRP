@@ -238,8 +238,11 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def update_product_resupply_history(self):
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -255,12 +258,15 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_resupply_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
 
     def update_product_consumption_history(self):
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -276,12 +282,15 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_consumption_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
 
     def update_product_scrap_history(self):
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -297,8 +306,14 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_scrap_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
+
+    def update_product_sales_history(self):
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
+        return super(StockWarehouseOrderpoint, orderpoints).update_product_sales_history()
 
     def _calculate_lead_time(self):
         purchase_base = self.company_id.purchase_lead_calc_base_on or 'vendor_lead_time'
@@ -364,7 +379,7 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def _get_reorder_boms(self, product):
-        if product.reorder_bom_id:
+        if self.env.context.get('wizard_specific_bom') and product.reorder_bom_id:
             return product.reorder_bom_id
         boms = self.env['mrp.bom'].search([
             '|',
@@ -382,15 +397,34 @@ class StockWarehouseOrderpoint(models.Model):
             return mto_route.id in product_routes.ids
         return False
 
+    def _has_bom(self, product):
+        boms = self.env['mrp.bom'].search([
+            '|',
+            ('product_id', '=', product.id),
+            '&',
+            ('product_tmpl_id', '=', product.product_tmpl_id.id),
+            ('product_id', '=', False)
+        ], limit=1)
+        return bool(boms)
+
     def _find_or_create_component_orderpoint(self, product, parent_op, target_wh_id, target_loc_id):
+        if parent_op.document_creation_option == 'od_default':
+            doc_option = 'od_default'
+        else:
+            doc_option = 'po' if not self._has_bom(product) else parent_op.document_creation_option
         existing_op = self.env['stock.warehouse.orderpoint'].search([
             ('product_id', '=', product.id),
             ('warehouse_id', '=', target_wh_id),
             ('company_id', '=', parent_op.company_id.id),
         ], limit=1)
         if existing_op:
+            write_vals = {}
             if parent_op.auto_create_components_orderpoint and not existing_op.auto_create_components_orderpoint:
-                existing_op.write({'auto_create_components_orderpoint': True})
+                write_vals['auto_create_components_orderpoint'] = True
+            if existing_op.document_creation_option != doc_option:
+                write_vals['document_creation_option'] = doc_option
+            if write_vals:
+                existing_op.write(write_vals)
             if parent_op.id not in existing_op.parent_orderpoint_ids.ids:
                 existing_op.write({'parent_orderpoint_ids': [(4, parent_op.id)]})
             return existing_op
@@ -400,7 +434,7 @@ class StockWarehouseOrderpoint(models.Model):
             'location_id': target_loc_id,
             'company_id': parent_op.company_id.id,
             'route_id': parent_op.route_id.id if (parent_op.route_id and target_wh_id == parent_op.warehouse_id.id) else False,
-            'document_creation_option': parent_op.document_creation_option,
+            'document_creation_option': doc_option,
             'consider_current_period_sales': parent_op.consider_current_period_sales,
             'buffer_days': parent_op.buffer_days,
             'average_sale_calculation_base': parent_op.average_sale_calculation_base,
@@ -440,8 +474,12 @@ class StockWarehouseOrderpoint(models.Model):
                         continue
                     if self._is_mto_product(product):
                         continue
-                    target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
-                    target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
+                    if self._has_bom(product):
+                        target_wh_id = op.warehouse_id.id
+                        target_loc_id = op.location_id.id
+                    else:
+                        target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
+                        target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
                     comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
                     all_affected_orderpoints |= comp_op
                     if comp_op.product_id.id not in processed_products:
