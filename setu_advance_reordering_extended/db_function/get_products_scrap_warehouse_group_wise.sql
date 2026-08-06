@@ -31,7 +31,7 @@ BEGIN
 RETURN QUERY
 SELECT
     sm.product_id,
-    pt.name::varchar AS product_name,
+    pt.name->>'en_US' AS product_name,
     wh.id AS warehouse_id,
     SUM(sm.quantity) AS scrap_qty,
     CASE
