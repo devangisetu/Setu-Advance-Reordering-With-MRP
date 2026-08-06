@@ -330,6 +330,18 @@ class AdvanceReorderOrderProcess(models.Model):
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
+    def _get_kit_component(self, products):
+        """Return the component products for the given kit products."""
+        component_products = self.env['product.product']
+
+        for product in products:
+            bom = self._get_product_bom(product)
+            if bom:
+                component_products |= bom.bom_line_ids.mapped('product_id')
+
+        return component_products
+
+
     def _merge_ads_data(self, sales_data, production_data, resupply_data, scrap_data):
         """
         Merges sales, production, resupply, and scrap data into a single product-wise demand summary with calculated ADS.
@@ -485,16 +497,18 @@ class AdvanceReorderOrderProcess(models.Model):
 
         return quantity
 
-    def _get_kit_component(self, products):
-        """Return the component products for the given kit products."""
-        component_products = self.env['product.product']
+    def _round_mrp_demand_quantities(self):
+        """Round demand quantities in MRP demand lines."""
 
-        for product in products:
-            bom = self._get_product_bom(product)
-            if bom:
-                component_products |= bom.bom_line_ids.mapped('product_id')
+        self._round_demand_qty(self.to_be_produced_line_ids)
+        self._round_demand_qty(self.component_demand_line_ids)
 
-        return component_products
+    def _round_demand_qty(self, lines):
+        """Round demand quantity for the given recordset."""
+
+        for line in lines:
+            line.demand_adjustment_qty = round(self._rounding_demand_quantity(line.net_demand))
+
 
     def action_reorder_confirm(self):
         """"DP"""
@@ -543,6 +557,7 @@ class AdvanceReorderOrderProcess(models.Model):
             self.component_demand_line_ids.unlink()
             self.by_product_line_ids.unlink()
             self._collect_mrp_tab_requirements()
+            self._round_mrp_demand_quantities()
         return True
 
     def _collect_mrp_tab_requirements(self, ):
@@ -806,8 +821,6 @@ class AdvanceReorderOrderProcess(models.Model):
             product, self.env['stock.warehouse'].browse(warehouse_ids)
         )
         scrap_data = self.get_scrap_data(config, product, )
-        net_demand =  max(0.0, required_qty - warehouse_qty['available'],)
-        demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
         return {
             'reorder_process_id': self.id,
             'config_id': config.id,
@@ -818,8 +831,7 @@ class AdvanceReorderOrderProcess(models.Model):
             'required_qty': required_qty,
             'incoming_qty': warehouse_qty['incoming'],
             'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
-            'net_demand': net_demand,
-            'demand_adjustment_qty': net_demand,
+            'net_demand': max(0.0, required_qty - warehouse_qty['available'],),
             'source_line_ids': [
                 (0, 0, {
                     'source_product_id': source_product.id,
@@ -842,15 +854,12 @@ class AdvanceReorderOrderProcess(models.Model):
         if match_line:
             match_line = self.to_be_produced_line_ids.filtered(lambda x: x.product_id.id == product.id)
             required_qty = qty
-            net_demand = max(0.0, (match_line.required_qty + qty) - match_line.available_qty, )
-            demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
             if match_line.net_demand <= 0:
                 required_qty = abs(min(0, match_line.available_qty - match_line.required_qty - qty))
 
             match_line.write({
                 'required_qty': match_line.required_qty + qty,
-                'net_demand': net_demand,
-                'demand_adjustment_qty': net_demand,
+                'net_demand': max(0.0, (match_line.required_qty + qty) - match_line.available_qty, ),
                 'source_line_ids': [
                     (0, 0, {
                         'source_product_id': source_product.id,
@@ -882,8 +891,6 @@ class AdvanceReorderOrderProcess(models.Model):
             )
             qty = bom_required_qty.get('qty')
             scrap_data = self.get_scrap_data(config, product, )
-            net_demand = max(0.0, (qty - warehouse_qty['available']), )
-            demand_adjustment_qty = self._rounding_demand_quantity(net_demand)
             ComponentLine.create({
                 'reorder_process_id': self.id,
                 'warehouse_group_id': config.warehouse_group_id.id,
@@ -892,8 +899,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 'required_qty': qty,
                 'incoming_qty': warehouse_qty['incoming'],
                 'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
-                'net_demand': net_demand,
-                'demand_adjustment_qty': net_demand,
+                'net_demand': max(0.0, (qty - warehouse_qty['available']), ),
                 'source_line_ids': bom_required_qty.get('source_line_ids'),
             })
 
@@ -1011,7 +1017,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 "product_id": product.id,
                 "demanded_qty": demanded_qty,
                 "vendor_moq": vendor_moq,
-                "order_qty": order_qty,
+                "order_qty": round(order_qty),
                 "total_volume": line_volume,
                 "to_be_ordered_in_purchase_uom": purchase_qty,
                 "order_action": order_action,
