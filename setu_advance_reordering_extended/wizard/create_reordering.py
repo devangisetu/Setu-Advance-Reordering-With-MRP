@@ -174,7 +174,8 @@ class CreateReordering(models.TransientModel):
                 self._cr.commit()
                 orderpoints.update_order_point_data()
                 orderpoints.with_context(
-                    wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+                    wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
+                    wizard_specific_bom=self.specific_bom,
                 )._auto_create_components_orderpoint()
             return self.action_orderpoint(orderpoints.ids)
         return True
@@ -250,7 +251,8 @@ class CreateReordering(models.TransientModel):
             self._cr.commit()
             orderpoints.update_order_point_data()
             orderpoints.with_context(
-                wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id
+                wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
+                wizard_specific_bom=self.specific_bom,
             )._auto_create_components_orderpoint()
         return self.action_orderpoint(orderpoints.ids)
 

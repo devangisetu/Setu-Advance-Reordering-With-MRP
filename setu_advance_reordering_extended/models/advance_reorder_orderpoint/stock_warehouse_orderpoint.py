@@ -364,7 +364,7 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def _get_reorder_boms(self, product):
-        if product.reorder_bom_id:
+        if self.env.context.get('wizard_specific_bom') and product.reorder_bom_id:
             return product.reorder_bom_id
         boms = self.env['mrp.bom'].search([
             '|',
