@@ -50,6 +50,7 @@ class CreateReordering(models.TransientModel):
     add_mo_in_lead_calc = fields.Boolean("Production", default=False)
     add_sc_in_lead_calc = fields.Boolean("Subcontracting", default=False)
     auto_create_components_orderpoint = fields.Boolean("Auto Create Components Orderpoint", default=False)
+    specific_bom = fields.Boolean("Specific BOM", default=False)
     average_sale_calculation_base = fields.Selection(string="Get Average Data From")
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
@@ -212,8 +213,6 @@ class CreateReordering(models.TransientModel):
             'add_purchase_in_lead_calc': self.add_purchase_in_lead_calc,
             'add_iwt_in_lead_calc': self.add_iwt_in_lead_calc,
             'buffer_days': self.buffer_days,
-            'auto_create_components_orderpoint': self.auto_create_components_orderpoint,
-            'demand_planning_type': self.demand_planning_type,
             'add_mo_in_lead_calc': self.add_mo_in_lead_calc,
             'add_sc_in_lead_calc': self.add_sc_in_lead_calc,
         }
