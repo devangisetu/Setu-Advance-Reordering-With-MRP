@@ -17,7 +17,7 @@ CREATE OR REPLACE FUNCTION public.get_products_subcontracting_warehouse_group_wi
 )
 RETURNS TABLE(
     product_id integer,
-    product_name varchar,
+    product_name text,
     warehouse_id integer,
     resupply_qty numeric,
     resupply_return_qty numeric,

@@ -17,7 +17,7 @@ CREATE OR REPLACE FUNCTION public.get_products_scrap_warehouse_group_wise(
 )
 RETURNS TABLE(
     product_id integer,
-    product_name varchar,
+    product_name text,
     warehouse_id integer,
     scrap_qty numeric,
     ads numeric
