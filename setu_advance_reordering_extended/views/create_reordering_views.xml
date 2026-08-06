@@ -40,7 +40,7 @@
                 <field name="add_sc_in_lead_calc" invisible="operation != 'orderpoint' or not use_subcontracting_for_orderpoint"/>
             </xpath>
             <xpath expr="//field[@name='average_sale_calculation_base']" position="after">
-                <field name="demand_planning_type" invisible="operation != 'orderpoint'"/>
+                <field name="demand_planning_type" invisible="operation != 'orderpoint' or orderpoint_operation == 'update_order_point'"/>
             </xpath>
             <xpath expr="//field[@name='location_selection_strategy']" position="after">
                 <separator string="Auto Orderpoint" invisible="operation != 'orderpoint' or orderpoint_operation not in ['create_order_point', 'update_order_point']" style="margin-top: 25px; font-size: 18px;"/>
