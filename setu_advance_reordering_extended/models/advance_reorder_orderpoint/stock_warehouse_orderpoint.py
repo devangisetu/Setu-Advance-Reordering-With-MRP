@@ -241,8 +241,8 @@ class StockWarehouseOrderpoint(models.Model):
         orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
         if not orderpoints:
             return True
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -258,15 +258,15 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_resupply_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
 
     def update_product_consumption_history(self):
         orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
         if not orderpoints:
             return True
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -282,15 +282,15 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_consumption_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
 
     def update_product_scrap_history(self):
         orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
         if not orderpoints:
             return True
-        products = self.mapped('product_id')
-        warehouses = self.mapped('warehouse_id')
+        products = orderpoints.mapped('product_id')
+        warehouses = orderpoints.mapped('warehouse_id')
         if not products or not warehouses:
             return True
         today = date.today()
@@ -306,14 +306,14 @@ class StockWarehouseOrderpoint(models.Model):
         query = """
             SELECT update_product_scrap_history(%s, %s, %s, %s)
         """
-        self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
+        self._cr.execute(query, [orderpoints.ids, min_start, max_end, self.env.user.id])
         return True
 
     def update_product_sales_history(self):
         orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
         if not orderpoints:
             return True
-        return super().update_product_sales_history()
+        return super(StockWarehouseOrderpoint, orderpoints).update_product_sales_history()
 
     def _calculate_lead_time(self):
         purchase_base = self.company_id.purchase_lead_calc_base_on or 'vendor_lead_time'
