@@ -238,6 +238,9 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def update_product_resupply_history(self):
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
         products = self.mapped('product_id')
         warehouses = self.mapped('warehouse_id')
         if not products or not warehouses:
@@ -259,6 +262,9 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def update_product_consumption_history(self):
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
         products = self.mapped('product_id')
         warehouses = self.mapped('warehouse_id')
         if not products or not warehouses:
@@ -280,6 +286,9 @@ class StockWarehouseOrderpoint(models.Model):
         return True
 
     def update_product_scrap_history(self):
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
         products = self.mapped('product_id')
         warehouses = self.mapped('warehouse_id')
         if not products or not warehouses:
@@ -299,6 +308,12 @@ class StockWarehouseOrderpoint(models.Model):
         """
         self._cr.execute(query, [self.ids, min_start, max_end, self.env.user.id])
         return True
+
+    def update_product_sales_history(self):
+        orderpoints = self.filtered(lambda op: not op.parent_orderpoint_ids)
+        if not orderpoints:
+            return True
+        return super().update_product_sales_history()
 
     def _calculate_lead_time(self):
         purchase_base = self.company_id.purchase_lead_calc_base_on or 'vendor_lead_time'
