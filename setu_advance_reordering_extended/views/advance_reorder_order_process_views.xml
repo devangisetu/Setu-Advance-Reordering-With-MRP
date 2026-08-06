@@ -28,7 +28,7 @@
         <field name="inherit_id" ref="setu_advance_reordering.form_advance_reorder_orderprocess"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='generate_demand_with']" position="after">
-                <field name="calculate_demand_based_on" readonly="state != 'draft'"/>
+                <field name="calculate_demand_based_on_selected_bom" readonly="state != 'draft'"/>
                 <field name="has_purchase_action_summary" invisible="1"/>
                 <field name="has_production_action_summary" invisible="1"/>
                 <field name="show_subcontracting_qty" invisible="1"/>
@@ -87,10 +87,10 @@
                 <field name="reorder_bom_id" string="BOM" optional="show"
                        domain="['|', ('product_id', '=', id), '&amp;', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False)]"
                        readonly="reorder_product_classification not in ('finished_good', 'semi_finished_good')"
-                       column_invisible="parent.calculate_demand_based_on == 'without_bom'"
+                       column_invisible="parent.calculate_demand_based_on_selected_bom != True"
                 />
                 <field name="reorder_bom_type" readonly="1" optional="show"
-                       column_invisible="parent.calculate_demand_based_on == 'without_bom'"/>
+                       column_invisible="parent.calculate_demand_based_on_selected_bom != True"/>
                 <field name="route_ids" widget="many2many_tags" string="Routes" optional="show"
                        readonly="1"/>
                 <field name="demand_planning_type" string="Demand Planning Type" required="1"

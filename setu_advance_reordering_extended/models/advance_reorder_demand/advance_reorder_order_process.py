@@ -4,7 +4,6 @@ from collections import defaultdict
 from datetime import datetime
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
-from decimal import Decimal, ROUND_HALF_UP
 
 _logger = logging.getLogger(__name__)
 
@@ -18,14 +17,8 @@ class AdvanceReorderOrderProcess(models.Model):
                                             help="Demand generate based on past sales or forecasted sales",
                                             default='history_sales')
 
-    calculate_demand_based_on = fields.Selection(
-        [
-            ('bom', 'Based on BOM'),
-            ('without_bom', 'Without BOM'),
-        ],
-        string='Calculate Demand Based On',
-        default='bom',
-        required=True,
+    calculate_demand_based_on_selected_bom = fields.Boolean(
+        string='Calculate Demand Based On Selected BOM',
         help='Based on BOM: explode using the product Reorder BOM. '
              'Without BOM: split FG/SFG demand across BOMs using completed MO '
              'usage ratios, then explode each BOM for component demand.',
@@ -80,13 +73,13 @@ class AdvanceReorderOrderProcess(models.Model):
         store=True,
     )
 
-    @api.onchange('product_ids', 'calculate_demand_based_on')
+    @api.onchange('product_ids', 'calculate_demand_based_on_selected_bom')
     def _onchange_product_ids(self):
         """Updates demand planning type and set the default BOM when products or demand calculation method changes."""
         for product in self.product_ids:
             if not product.demand_planning_type:
                 product._compute_demand_planning_type()
-            if self.calculate_demand_based_on == 'bom' and not product.reorder_bom_id:
+            if self.calculate_demand_based_on_selected_bom and not product.reorder_bom_id:
                 product.reorder_bom_id = product.get_default_bom()
 
     def _compute_production_count(self):
@@ -571,7 +564,7 @@ class AdvanceReorderOrderProcess(models.Model):
         )
         by_product_data = []
         warehouse_groups = self.config_ids.mapped('warehouse_group_id')
-        use_bom = self.calculate_demand_based_on == 'bom'
+        use_bom = self.calculate_demand_based_on_selected_bom
 
         for config in self.config_ids:
             lines = self.line_ids.filtered(lambda x: x.config_id.id == config.id)
@@ -632,7 +625,7 @@ class AdvanceReorderOrderProcess(models.Model):
         if quantity <= 0:
             return
 
-        if self.calculate_demand_based_on == 'without_bom':
+        if self.calculate_demand_based_on_selected_bom:
             bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                 product,
                 quantity,
@@ -1403,7 +1396,8 @@ class AdvanceReorderOrderProcess(models.Model):
                     warehouse.display_name,
                 ))
 
-            if self.calculate_demand_based_on == 'without_bom':
+            bom_wise_demand = False
+            if self.calculate_demand_based_on_selected_bom:
                 bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                     product,
                     summary_line.order_qty,
