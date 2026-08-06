@@ -10,11 +10,11 @@
             <!-- Real Demand: scrap & subcontracting in demand calculation -->
             <xpath expr="//block[@name='advance_reordering_with_demand']" position="inside">
                 <setting string="Scrap"
-                         help="Include scrap quantity in the Real Demand calculation.">
+                         help="Enable to Include historical scrap quantities while calculating real demand. Scrap quantities will be reflected in demand calculations.">
                     <field name="use_scrap_for_demand"/>
                 </setting>
                 <setting string="Subcontracting"
-                         help="Include resupply quantity in the Real Demand calculation.">
+                         help="Enable to Include subcontracting BOMs, subcontracting order history, component consumption, and subcontracting lead times while calculating real demand and replenishment recommendations.">
                     <field name="use_subcontracting_for_demand"/>
                 </setting>
             </xpath>
@@ -22,11 +22,11 @@
             <!-- Orderpoint: scrap/subcontracting toggles and subcontract lead config -->
             <xpath expr="//block[@name='advance_reordering_with_orderpoint']" position="inside">
                 <setting string="Scrap"
-                         help="Include scrap in daily demand calculation.">
+                         help="Enable to Include historical scrap quantities in orderpoint calculations. Scrap quantities will be considered when calculating reorder quantities based on the selected scrap configuration.">
                     <field name="use_scrap_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontracting"
-                         help="Include subcontracting in lead time calculation.">
+                         help="Enable to Include subcontracting BOMs, subcontracting order history, and subcontracting lead times while calculating reordering rules. Products with a subcontracting replenishment strategy will be considered during orderpoint generation and replenishment recommendations.">
                     <field name="use_subcontracting_for_orderpoint"/>
                 </setting>
                 <setting string="Subcontract Lead Calculation"
