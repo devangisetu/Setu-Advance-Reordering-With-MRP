@@ -32,7 +32,7 @@ BEGIN
 RETURN QUERY
 SELECT
     sm.product_id,
-    pt.name::varchar AS product_name,
+    pt.name->>'en_US' AS product_name,
     wh.id AS warehouse_id,
 
     -- Quantity sent to subcontractor
@@ -49,7 +49,7 @@ SELECT
     SUM(
         CASE
             WHEN sl.is_subcontracting_location = TRUE
-                 AND dl.usage != 'production'
+                 AND sp.return_id IS NOT NULL
             THEN sm.quantity
             ELSE 0
         END
@@ -70,7 +70,7 @@ SELECT
                 SUM(
                     CASE
                         WHEN sl.is_subcontracting_location = TRUE
-                             AND dl.usage != 'production'
+                             AND sp.return_id IS NOT NULL
                         THEN sm.quantity
                         ELSE 0
                     END
@@ -80,6 +80,8 @@ SELECT
     END AS ads
 
 FROM stock_move sm
+LEFT JOIN stock_picking sp
+	ON sp.id = sm.picking_id
 
 LEFT JOIN stock_location sl
     ON sl.id = sm.location_id
