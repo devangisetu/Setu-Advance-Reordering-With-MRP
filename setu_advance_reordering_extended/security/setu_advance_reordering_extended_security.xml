@@ -1,0 +1,8 @@
+<odoo>
+    <!-- Record rule for company specific product planning parameters -->
+    <record id="product_planning_company_rule" model="ir.rule">
+        <field name="name">Product Planning - Company</field>
+        <field name="model_id" ref="model_product_planning"/>
+        <field name="domain_force">[('company_id', 'in', company_ids + [False])]</field>
+    </record>
+</odoo>

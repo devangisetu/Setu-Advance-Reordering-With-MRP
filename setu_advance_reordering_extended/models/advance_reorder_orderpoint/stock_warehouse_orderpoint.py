@@ -90,10 +90,22 @@ class StockWarehouseOrderpoint(models.Model):
 
     reorder_bom_id = fields.Many2one(
         'mrp.bom',
-        related='product_id.reorder_bom_id',
+        compute='_compute_reorder_bom_id',
         string='Reorder BOM',
         readonly=True
     )
+
+    def _compute_reorder_bom_id(self):
+        products = self.mapped('product_id')
+        companies = self.mapped('company_id')
+        planning_records = self.env['product.planning'].search([
+            ('product_id', 'in', products.ids),
+            ('company_id', 'in', companies.ids)
+        ])
+        planning_map = {(p.product_id.id, p.company_id.id): p.reorder_bom_id for p in planning_records}
+        for op in self:
+            bom = planning_map.get((op.product_id.id, op.company_id.id), False)
+            op.reorder_bom_id = bom or op.product_id.reorder_bom_id
 
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
@@ -378,17 +390,18 @@ class StockWarehouseOrderpoint(models.Model):
                 })
         return True
 
-    def _get_reorder_boms(self, product):
-        if self.env.context.get('wizard_specific_bom') and product.reorder_bom_id:
-            return product.reorder_bom_id
+    def _get_reorder_boms(self):
+        self.ensure_one()
+        if self.env.context.get('wizard_specific_bom') and self.reorder_bom_id:
+            return self.reorder_bom_id
         return self.env['mrp.bom'].search([
             '|',
-            ('company_id', '=', self.env.company.id),
+            ('company_id', '=', self.company_id.id),
             ('company_id', '=', False),
             '|',
-            ('product_id', '=', product.id),
+            ('product_id', '=', self.product_id.id),
             '&',
-            ('product_tmpl_id', '=', product.product_tmpl_id.id),
+            ('product_tmpl_id', '=', self.product_tmpl_id.id),
             ('product_id', '=', False),
         ])
 
@@ -467,7 +480,7 @@ class StockWarehouseOrderpoint(models.Model):
             if not op.auto_create_components_orderpoint or not op.product_id or key in processed:
                 continue
             processed.add(key)
-            boms = self._get_reorder_boms(op.product_id)
+            boms = op._get_reorder_boms()
             if not boms:
                 continue
             for bom in boms:
@@ -508,7 +521,7 @@ class StockWarehouseOrderpoint(models.Model):
             max_qty = 0.0
             for parent_op in parent_ops:
                 parent_product = parent_op.product_id
-                parent_bom = parent_product.reorder_bom_id
+                parent_bom = parent_op.reorder_bom_id
                 if not parent_bom and parent_product.bom_ids:
                     parent_bom = parent_product.bom_ids[0]
                 if parent_bom:
