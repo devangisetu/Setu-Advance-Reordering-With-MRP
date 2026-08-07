@@ -490,6 +490,11 @@ class StockWarehouseOrderpoint(models.Model):
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
+            all_affected_orderpoints.update_order_point_data()
+
+    def update_order_point_data(self):
+        self.env.flush_all()
+        return super().update_order_point_data()
 
     def recalculate_data(self):
         """
@@ -520,6 +525,7 @@ class StockWarehouseOrderpoint(models.Model):
                 self.update_product_iwt_history()
                 self.update_product_production_history()
                 self.update_product_subcontract_history()
+            self.env.invalidate_all()
             self._calculate_lead_time()
 
             self.write({
@@ -538,15 +544,16 @@ class StockWarehouseOrderpoint(models.Model):
         if not history_context:
             if self.demand_planning_type in ('sales_driven', 'combined'):
                 self.update_product_sales_history()
-            if self.demand_planning_type in ('production_driven', 'combined'):
-                self.update_product_consumption_history()
-                self.update_product_resupply_history()
             self.update_product_purchase_history()
             self.update_product_iwt_history()
-            self.update_product_production_history()
-            self.update_product_subcontract_history()
-            if self.use_scrap_for_orderpoint:
-                self.update_product_scrap_history()
+        if self.demand_planning_type in ('production_driven', 'combined'):
+            self.update_product_consumption_history()
+            self.update_product_resupply_history()
+        self.update_product_production_history()
+        self.update_product_subcontract_history()
+        if self.use_scrap_for_orderpoint:
+            self.update_product_scrap_history()
+        self.env.invalidate_all()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
         self.onchange_average_sale_calculation_base()

@@ -240,12 +240,7 @@ class CreateReordering(models.TransientModel):
 
         for orderpoint_id in orderpoints.ids:
             orderpoint = self.env['stock.warehouse.orderpoint'].browse(orderpoint_id)
-            orderpoint._calculate_lead_time()
-            orderpoint.calculate_sales_average_max()
-            orderpoint.onchange_average_sale_calculation_base()
-            orderpoint.onchange_safety_stock()
-            orderpoint.onchange_avg_sale_lead_time()
-            orderpoint.onchange_safety_stock()
+            orderpoint.with_context(already_calculated_history=True, do_not_checked_rule=True).recalculate_data()
 
         if orderpoints:
             self._cr.commit()
