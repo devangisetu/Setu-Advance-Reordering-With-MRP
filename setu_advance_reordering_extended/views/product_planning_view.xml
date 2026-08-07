@@ -3,14 +3,14 @@
     <data>
 
         <record id="product_planning_tree_view" model="ir.ui.view">
-            <field name="name">product.product.tree</field>
-            <field name="model">product.product</field>
+            <field name="name">product.planning.tree</field>
+            <field name="model">product.planning</field>
             <field name="arch" type="xml">
-                <list string="Products" create="false" editable="bottom">
-                    <field name="name"/>
-                    <field name="product_tmpl_id" column_invisible="True"/>
+                <list string="Product Planning" create="false" editable="bottom">
+                    <field name="product_id" readonly="1"/>
                     <field name="reorder_bom_id" readonly="False" options="{'no_create': True,}"/>
                     <field name="demand_planning_type"/>
+                    <field name="company_id" groups="base.group_multi_company" readonly="1"/>
                 </list>
             </field>
         </record>
@@ -30,7 +30,7 @@
 
         <record id="action_product_planning" model="ir.actions.act_window">
             <field name="name">Product Planning</field>
-            <field name="res_model">product.product</field>
+            <field name="res_model">product.planning</field>
             <field name="view_mode">list</field>
             <field name="view_id" ref="product_planning_tree_view"/>
             <field name="help" type="html">

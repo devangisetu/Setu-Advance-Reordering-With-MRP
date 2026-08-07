@@ -6,5 +6,10 @@ from . import product_subcontract_history
 from . import product_consumption_history
 from . import product_resupply_history
 from . import product_scrap_history
+from . import product_planning
+from . import product_product
+from . import res_company
+
+
 
 

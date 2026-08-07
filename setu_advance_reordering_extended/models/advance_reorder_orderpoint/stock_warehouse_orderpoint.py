@@ -90,10 +90,22 @@ class StockWarehouseOrderpoint(models.Model):
 
     reorder_bom_id = fields.Many2one(
         'mrp.bom',
-        related='product_id.reorder_bom_id',
+        compute='_compute_reorder_bom_id',
         string='Reorder BOM',
         readonly=True
     )
+
+    def _compute_reorder_bom_id(self):
+        products = self.mapped('product_id')
+        companies = self.mapped('company_id')
+        planning_records = self.env['product.planning'].search([
+            ('product_id', 'in', products.ids),
+            ('company_id', 'in', companies.ids)
+        ])
+        planning_map = {(p.product_id.id, p.company_id.id): p.reorder_bom_id for p in planning_records}
+        for op in self:
+            bom = planning_map.get((op.product_id.id, op.company_id.id), False)
+            op.reorder_bom_id = bom or op.product_id.reorder_bom_id
 
     consider_current_period_sales = fields.Boolean(
         string='Consider Current Period Data',
@@ -378,17 +390,20 @@ class StockWarehouseOrderpoint(models.Model):
                 })
         return True
 
-    def _get_reorder_boms(self, product):
-        if self.env.context.get('wizard_specific_bom') and product.reorder_bom_id:
-            return product.reorder_bom_id
-        boms = self.env['mrp.bom'].search([
+    def _get_reorder_boms(self):
+        self.ensure_one()
+        if self.env.context.get('wizard_specific_bom') and self.reorder_bom_id:
+            return self.reorder_bom_id
+        return self.env['mrp.bom'].search([
             '|',
-            ('product_id', '=', product.id),
+            ('company_id', '=', self.company_id.id),
+            ('company_id', '=', False),
+            '|',
+            ('product_id', '=', self.product_id.id),
             '&',
-            ('product_tmpl_id', '=', product.product_tmpl_id.id),
-            ('product_id', '=', False)
+            ('product_tmpl_id', '=', self.product_tmpl_id.id),
+            ('product_id', '=', False),
         ])
-        return boms
 
     def _is_mto_product(self, product):
         mto_route = self.env.ref('stock.route_warehouse0_mto', raise_if_not_found=False)
@@ -455,16 +470,17 @@ class StockWarehouseOrderpoint(models.Model):
         if self._context.get('prevent_component_recursion'):
             return
         to_process = list(self)
-        processed_products = set()
+        processed = set()
         all_affected_orderpoints = self.env['stock.warehouse.orderpoint']
         wizard_wh_id = self.env.context.get('wizard_component_planning_warehouse_id')
         wizard_wh = self.env['stock.warehouse'].browse(wizard_wh_id) if wizard_wh_id else False
         while to_process:
             op = to_process.pop(0)
-            if not op.auto_create_components_orderpoint or not op.product_id or op.product_id.id in processed_products:
+            key = (op.product_id.id, op.warehouse_id.id)
+            if not op.auto_create_components_orderpoint or not op.product_id or key in processed:
                 continue
-            processed_products.add(op.product_id.id)
-            boms = self._get_reorder_boms(op.product_id)
+            processed.add(key)
+            boms = op._get_reorder_boms()
             if not boms:
                 continue
             for bom in boms:
@@ -482,11 +498,16 @@ class StockWarehouseOrderpoint(models.Model):
                         target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
                     comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
                     all_affected_orderpoints |= comp_op
-                    if comp_op.product_id.id not in processed_products:
+                    if (comp_op.product_id.id, comp_op.warehouse_id.id) not in processed:
                         to_process.append(comp_op)
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
+            all_affected_orderpoints.update_order_point_data()
+
+    def update_order_point_data(self):
+        self.env.flush_all()
+        return super().update_order_point_data()
 
     def recalculate_data(self):
         """
@@ -500,7 +521,7 @@ class StockWarehouseOrderpoint(models.Model):
             max_qty = 0.0
             for parent_op in parent_ops:
                 parent_product = parent_op.product_id
-                parent_bom = parent_product.reorder_bom_id
+                parent_bom = parent_op.reorder_bom_id
                 if not parent_bom and parent_product.bom_ids:
                     parent_bom = parent_product.bom_ids[0]
                 if parent_bom:
@@ -517,6 +538,7 @@ class StockWarehouseOrderpoint(models.Model):
                 self.update_product_iwt_history()
                 self.update_product_production_history()
                 self.update_product_subcontract_history()
+            self.env.invalidate_all()
             self._calculate_lead_time()
 
             self.write({
@@ -535,15 +557,16 @@ class StockWarehouseOrderpoint(models.Model):
         if not history_context:
             if self.demand_planning_type in ('sales_driven', 'combined'):
                 self.update_product_sales_history()
-            if self.demand_planning_type in ('production_driven', 'combined'):
-                self.update_product_consumption_history()
-                self.update_product_resupply_history()
             self.update_product_purchase_history()
             self.update_product_iwt_history()
-            self.update_product_production_history()
-            self.update_product_subcontract_history()
-            if self.use_scrap_for_orderpoint:
-                self.update_product_scrap_history()
+        if self.demand_planning_type in ('production_driven', 'combined'):
+            self.update_product_consumption_history()
+            self.update_product_resupply_history()
+        self.update_product_production_history()
+        self.update_product_subcontract_history()
+        if self.use_scrap_for_orderpoint:
+            self.update_product_scrap_history()
+        self.env.invalidate_all()
         self._calculate_lead_time()
         self.calculate_sales_average_max()
         self.onchange_average_sale_calculation_base()
