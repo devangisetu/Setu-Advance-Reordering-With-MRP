@@ -917,7 +917,13 @@ class AdvanceReorderOrderProcess(models.Model):
 
     def _get_product_bom(self, product):
         """Returns the configured reorder BOM or the product's default BOM."""
-        return product.reorder_bom_id or (product.bom_ids[:1] if product.bom_ids else self.env['mrp.bom'])
+        return (
+                product.reorder_bom_id
+                or product.bom_ids.filtered(
+            lambda b: not b.company_id or b.company_id == self.company_id
+        )[:1]
+                or self.env['mrp.bom']
+        )
 
     def action_reorder_reset_to_draft(self):
         """Clears all generated MRP demand lines and resets the reorder process to draft."""
