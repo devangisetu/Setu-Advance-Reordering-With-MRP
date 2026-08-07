@@ -381,14 +381,16 @@ class StockWarehouseOrderpoint(models.Model):
     def _get_reorder_boms(self, product):
         if self.env.context.get('wizard_specific_bom') and product.reorder_bom_id:
             return product.reorder_bom_id
-        boms = self.env['mrp.bom'].search([
+        return self.env['mrp.bom'].search([
+            '|',
+            ('company_id', '=', self.env.company.id),
+            ('company_id', '=', False),
             '|',
             ('product_id', '=', product.id),
             '&',
             ('product_tmpl_id', '=', product.product_tmpl_id.id),
-            ('product_id', '=', False)
+            ('product_id', '=', False),
         ])
-        return boms
 
     def _is_mto_product(self, product):
         mto_route = self.env.ref('stock.route_warehouse0_mto', raise_if_not_found=False)
@@ -455,15 +457,16 @@ class StockWarehouseOrderpoint(models.Model):
         if self._context.get('prevent_component_recursion'):
             return
         to_process = list(self)
-        processed_products = set()
+        processed = set()
         all_affected_orderpoints = self.env['stock.warehouse.orderpoint']
         wizard_wh_id = self.env.context.get('wizard_component_planning_warehouse_id')
         wizard_wh = self.env['stock.warehouse'].browse(wizard_wh_id) if wizard_wh_id else False
         while to_process:
             op = to_process.pop(0)
-            if not op.auto_create_components_orderpoint or not op.product_id or op.product_id.id in processed_products:
+            key = (op.product_id.id, op.warehouse_id.id)
+            if not op.auto_create_components_orderpoint or not op.product_id or key in processed:
                 continue
-            processed_products.add(op.product_id.id)
+            processed.add(key)
             boms = self._get_reorder_boms(op.product_id)
             if not boms:
                 continue
@@ -482,7 +485,7 @@ class StockWarehouseOrderpoint(models.Model):
                         target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
                     comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
                     all_affected_orderpoints |= comp_op
-                    if comp_op.product_id.id not in processed_products:
+                    if (comp_op.product_id.id, comp_op.warehouse_id.id) not in processed:
                         to_process.append(comp_op)
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
