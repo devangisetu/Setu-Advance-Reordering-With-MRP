@@ -88,12 +88,12 @@ class CreateReordering(models.TransientModel):
     @api.depends('update_component_orderpoint')
     def _compute_product_domain_ids(self):
         Product = self.env['product.product']
-        Bom = self.env['mrp.bom']
+        Bom = self.env['mrp.bom'].search([])
         bom_product_ids = Bom.mapped('product_id').ids
         bom_template_ids = Bom.mapped('product_tmpl_id').ids
         for wizard in self:
             if wizard.auto_create_components_orderpoint:
-                wizard.product_domain_ids = Product.search([('id', 'not in', bom_product_ids),('product_tmpl_id', 'not in', bom_template_ids),])
+                wizard.product_domain_ids = Product.search([('id', 'in', bom_product_ids),('product_tmpl_id', 'in', bom_template_ids),])
             else:
                 wizard.product_domain_ids = self.env['product.product'].search([])
 
