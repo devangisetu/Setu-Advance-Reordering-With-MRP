@@ -105,13 +105,15 @@ class CreateReordering(models.TransientModel):
             mapping.company_id.id: mapping.warehouse_id.id
             for mapping in self.component_warehouse_ids
         }
-        self = self.with_context(
-            wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
-            wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
-            wizard_auto_create_components_orderpoint=self.auto_create_components_orderpoint,
-            wizard_demand_planning_type=self.demand_planning_type,
-            wizard_component_warehouse_by_company=comp_wh_by_company,
-        )
+        context = {
+            'wizard_add_mo_in_lead_calc': self.add_mo_in_lead_calc,
+            'wizard_add_sc_in_lead_calc': self.add_sc_in_lead_calc,
+            'wizard_auto_create_components_orderpoint': self.auto_create_components_orderpoint,
+            'wizard_component_warehouse_by_company': comp_wh_by_company,
+        }
+        if self.orderpoint_operation == 'create_order_point':
+            context['wizard_demand_planning_type'] = self.demand_planning_type
+        self = self.with_context(**context)
         return super().perform_operation()
 
     def create_reorder_rule(self):
