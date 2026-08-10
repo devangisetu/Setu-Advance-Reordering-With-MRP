@@ -67,9 +67,10 @@ class CreateReordering(models.TransientModel):
         default=False,
         help="If enabled, product selection will only show products whose orderpoints have no parent product orderpoints."
     )
-    component_planning_warehouse_id = fields.Many2one(
-        "stock.warehouse",
-        string="Component Planning Warehouse"
+    component_warehouse_ids = fields.One2many(
+        "create.reordering.component.warehouse.mapping",
+        "wizard_id",
+        string="Component Planning Warehouses"
     )
     product_domain_ids = fields.Many2many(
         'product.product',
@@ -100,12 +101,16 @@ class CreateReordering(models.TransientModel):
 
     def perform_operation(self):
         # self._filter_wizard_products()
+        comp_wh_by_company = {
+            mapping.company_id.id: mapping.warehouse_id.id
+            for mapping in self.component_warehouse_ids
+        }
         self = self.with_context(
             wizard_add_mo_in_lead_calc=self.add_mo_in_lead_calc,
             wizard_add_sc_in_lead_calc=self.add_sc_in_lead_calc,
             wizard_auto_create_components_orderpoint=self.auto_create_components_orderpoint,
             wizard_demand_planning_type=self.demand_planning_type,
-            wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
+            wizard_component_warehouse_by_company=comp_wh_by_company,
         )
         return super().perform_operation()
 
@@ -173,8 +178,12 @@ class CreateReordering(models.TransientModel):
             if orderpoints:
                 self._cr.commit()
                 orderpoints.update_order_point_data()
+                comp_wh_by_company = {
+                    mapping.company_id.id: mapping.warehouse_id.id
+                    for mapping in self.component_warehouse_ids
+                }
                 orderpoints.with_context(
-                    wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
+                    wizard_component_warehouse_by_company=comp_wh_by_company,
                     wizard_specific_bom=self.specific_bom,
                 )._auto_create_components_orderpoint()
             return self.action_orderpoint(orderpoints.ids)
@@ -245,8 +254,12 @@ class CreateReordering(models.TransientModel):
         if orderpoints:
             self._cr.commit()
             orderpoints.update_order_point_data()
+            comp_wh_by_company = {
+                mapping.company_id.id: mapping.warehouse_id.id
+                for mapping in self.component_warehouse_ids
+            }
             orderpoints.with_context(
-                wizard_component_planning_warehouse_id=self.component_planning_warehouse_id.id,
+                wizard_component_warehouse_by_company=comp_wh_by_company,
                 wizard_specific_bom=self.specific_bom,
             )._auto_create_components_orderpoint()
         return self.action_orderpoint(orderpoints.ids)
@@ -293,3 +306,5 @@ class CreateReordering(models.TransientModel):
             orderpoints.update_product_scrap_history()
         action = self.env.ref('setu_advance_reordering_extended.product_scrap_history_action').sudo().read()[0]
         return action
+
+
