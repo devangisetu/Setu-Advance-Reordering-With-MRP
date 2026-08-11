@@ -515,10 +515,7 @@ class StockWarehouseOrderpoint(models.Model):
         return super().update_order_point_data()
 
     def recalculate_data(self):
-        """
-              added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
-              use: Recalculate order point data.
-        """
+
         parent_ops = self.parent_orderpoint_ids
         if parent_ops:
             self.reset_all_data()
@@ -556,7 +553,6 @@ class StockWarehouseOrderpoint(models.Model):
                 'warehouse_changed': False
             })
             return True
-
         history_context = self._context.get('already_calculated_history', False)
         self.reset_all_data()
         if not history_context:
@@ -568,7 +564,8 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_consumption_history()
             self.update_product_resupply_history()
         self.update_product_production_history()
-        self.update_product_subcontract_history()
+        if self.use_subcontracting_for_orderpoint:
+            self.update_product_subcontract_history()
         if self.use_scrap_for_orderpoint:
             self.update_product_scrap_history()
         self.env.invalidate_all()

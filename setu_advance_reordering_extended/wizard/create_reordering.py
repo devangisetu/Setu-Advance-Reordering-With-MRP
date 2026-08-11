@@ -100,7 +100,6 @@ class CreateReordering(models.TransientModel):
 
 
     def perform_operation(self):
-        # self._filter_wizard_products()
         comp_wh_by_company = {
             mapping.company_id.id: mapping.warehouse_id.id
             for mapping in self.component_warehouse_ids
