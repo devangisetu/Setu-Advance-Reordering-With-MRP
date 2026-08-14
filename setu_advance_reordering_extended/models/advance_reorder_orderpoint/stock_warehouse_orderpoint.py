@@ -508,6 +508,8 @@ class StockWarehouseOrderpoint(models.Model):
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
                 op.with_context(prevent_component_recursion=True).recalculate_data()
+            for op in reversed(all_affected_orderpoints):
+                op.with_context(prevent_component_recursion=True).recalculate_data()
             all_affected_orderpoints.update_order_point_data()
 
     def update_order_point_data(self):
@@ -524,8 +526,8 @@ class StockWarehouseOrderpoint(models.Model):
             for parent_op in parent_ops:
                 parent_product = parent_op.product_id
                 parent_bom = parent_op.reorder_bom_id
-                if not parent_bom and parent_product.bom_ids:
-                    parent_bom = parent_product.bom_ids[0]
+                if not parent_bom:
+                    parent_bom = parent_product.get_default_bom(parent_op.company_id.id)
                 if parent_bom:
                     bom_line = parent_bom.bom_line_ids.filtered(lambda x: x.product_id == self.product_id)
                     if bom_line:
