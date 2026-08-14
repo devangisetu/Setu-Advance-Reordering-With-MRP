@@ -22,13 +22,30 @@
             </xpath>
 
             <xpath expr="//field[@name='warehouse_id']" position="after">
-                <field name="demand_planning_type"/>
+                <field name="demand_planning_type" invisible="parent_orderpoint_ids"/>
                 <field name="reorder_bom_id" readonly="1" invisible="not reorder_bom_id"/>
                 <field name="parent_orderpoint_domain_ids" invisible="1"/>
                 <field name="parent_orderpoint_ids" widget="many2many_tags" options="{'no_create': True, 'no_edit': True}"/>
                 <div class="alert alert-warning text-center" role="alert" style="margin-top: 10px; margin-bottom: 10px; grid-column: span 2;" invisible="not warehouse_changed">
                     <strong>Warning!</strong> You have changed the warehouse. Please click <strong>"Calculate Data"</strong> to recalculate.
                 </div>
+            </xpath>
+
+            <xpath expr="//field[@name='average_sale_calculation_base']" position="attributes">
+                <attribute name="invisible">parent_orderpoint_ids</attribute>
+                <attribute name="required">not parent_orderpoint_ids</attribute>
+            </xpath>
+            <xpath expr="//field[@name='consider_current_period_sales']" position="attributes">
+                <attribute name="invisible">parent_orderpoint_ids</attribute>
+            </xpath>
+            <xpath expr="//field[@name='ads_qty']" position="attributes">
+                <attribute name="invisible">parent_orderpoint_ids</attribute>
+            </xpath>
+            <xpath expr="//field[@name='max_daily_sale_qty']" position="attributes">
+                <attribute name="invisible">parent_orderpoint_ids</attribute>
+            </xpath>
+            <xpath expr="//field[@name='suggested_safety_stock']" position="attributes">
+                <attribute name="invisible">parent_orderpoint_ids</attribute>
             </xpath>
 
             <xpath expr="//field[@name='visibility_days']" position="replace"/>
