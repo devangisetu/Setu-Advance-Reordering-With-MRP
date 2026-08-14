@@ -52,7 +52,7 @@ BEGIN
         SELECT 
             sm.id AS move_id,
             sm.product_id,
-            sm.product_qty,
+            sm.quantity AS product_qty,
             sm.date::date AS move_date,
             COALESCE(
                 source_loc.warehouse_id,
