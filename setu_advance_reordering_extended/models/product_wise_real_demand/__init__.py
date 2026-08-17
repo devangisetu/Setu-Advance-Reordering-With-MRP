@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-from . import product_wise_real_demand
-from . import product_wise_real_demand_line
-from . import product_wise_real_demand_demand_line
-from . import product_wise_real_demand_summary
+from . import advance_reorder_product_wise_process
+from . import advance_reorder_product_component_line
+from . import advance_reorder_product_wise_process_line
+from . import advance_reorder_product_wise_order_summary
 from . import purchase_order
 from . import mrp_production

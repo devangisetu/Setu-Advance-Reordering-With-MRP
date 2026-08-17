@@ -185,11 +185,6 @@ class AdvanceReorderProductRealDemand(models.Model):
     @api.onchange('product_id')
     def _onchange_product_id(self):
         self.bom_id = False
-        self.calculated_lead_days = 0.0
-        self.component_line_ids = [(5, 0, 0)]
-        self.demand_line_ids = [(5, 0, 0)]
-        self.summary_ids = [(5, 0, 0)]
-        self.state = 'draft'
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
