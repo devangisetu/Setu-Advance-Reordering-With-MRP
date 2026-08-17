@@ -256,87 +256,72 @@ class AdvanceReorderProductRealDemand(models.Model):
             return mean(sellers.mapped('delay'))
         return 0.0
 
-    def _get_procurement_method(self, product, bom):
-        if bom and bom.type == 'subcontract':
-            return 'subcontract'
-        if bom:
-            return 'manufacture'
-        return 'purchase'
-
-    def _get_own_lead_days(self, product, bom, procurement_method):
-        if procurement_method == 'purchase':
-            return self._get_purchase_lead_days(product)
-        if procurement_method == 'subcontract':
-            return self._get_purchase_lead_days(product, bom.subcontractor_ids)
-        return (bom.produce_delay if bom else 0.0) or 0.0
-
-    def _build_lead_tree(self, product, required_qty, parent_product=False, level=0, ancestors=None):
+    def _build_lead_tree(self, product, parent_product=False, level=0, visited_products=None):
+        """Build BOM tree and calculate lead days using critical path."""
         self.ensure_one()
-        ancestors = set(ancestors or set())
-        if product.id in ancestors:
+
+        visited_products = set(visited_products or set())
+
+        if product.id in visited_products:
             raise ValidationError(_(
                 'Circular BOM detected while calculating lead time for "%s".'
             ) % product.display_name)
 
-        bom = self._get_product_bom(product)
-        procurement_method = self._get_procurement_method(product, bom)
+        is_manufactured = product.reorder_product_classification in (
+            'finished_good',
+            'semi_finished_good',
+        )
+
+        # Get BOM only for FG / SFG
+        if is_manufactured:
+            if level == 0:
+                bom = self.bom_id or self._get_product_bom(product)
+                if not bom:
+                    raise ValidationError(_('Please select BOM first.'))
+            else:
+                bom = self._get_product_bom(product)
+
+            own_lead_days = bom.produce_delay
+        else:
+            bom = False
+            own_lead_days = self._get_purchase_lead_days(product)
+
         node = {
             'product': product,
             'parent_product': parent_product,
             'bom': bom,
-            'required_qty': required_qty,
             'level': level,
-            'procurement_method': procurement_method,
-            'production_lead_days': (bom.produce_delay if bom else 0.0) or 0.0,
-            'purchase_lead_days': 0.0,
-            'subcontract_lead_days': 0.0,
+            'own_lead_days': own_lead_days,
             'children': [],
-            'critical_children': [],
         }
-        next_ancestors = ancestors | {product.id}
 
-        if procurement_method == 'purchase':
-            node['purchase_lead_days'] = self._get_purchase_lead_days(product)
-            node['calculated_lead_days'] = node['purchase_lead_days']
-            return node
+        next_visited_products = visited_products | {product.id}
 
-        if procurement_method == 'subcontract':
-            node['subcontract_lead_days'] = self._get_own_lead_days(
-                product, bom, procurement_method
-            )
+        # Only FG/SFG products have BOM component branches
+        if is_manufactured and bom:
+            for bom_line in bom.bom_line_ids:
+                component = bom_line.product_id
 
-        if bom:
-            bom_qty = bom.product_qty or 1.0
-            for bom_line in bom.bom_line_ids.filtered('product_id'):
-                component_qty = required_qty * (bom_line.product_qty / bom_qty)
-                node['children'].append(self._build_lead_tree(
-                    bom_line.product_id,
-                    component_qty,
+                child = self._build_lead_tree(
+                    component,
                     parent_product=product,
                     level=level + 1,
-                    ancestors=next_ancestors,
-                ))
+                    visited_products=next_visited_products,
+                )
+
+                node['children'].append(child)
 
         max_child_lead = max(
-            (child['calculated_lead_days'] for child in node['children']),
+            (
+                child['calculated_lead_days']
+                for child in node['children']
+            ),
             default=0.0,
         )
-        node['critical_children'] = [
-            child for child in node['children']
-            if child['calculated_lead_days'] == max_child_lead and max_child_lead > 0.0
-        ]
-        own_lead_days = (
-            node['subcontract_lead_days']
-            if procurement_method == 'subcontract'
-            else node['production_lead_days']
-        )
-        node['calculated_lead_days'] = own_lead_days + max_child_lead
-        return node
 
-    def _mark_critical_path(self, node):
-        node['is_critical_path'] = True
-        for child in node['critical_children']:
-            self._mark_critical_path(child)
+        node['calculated_lead_days'] = own_lead_days + max_child_lead
+
+        return node
 
     def _create_component_tree_lines(self, node, parent_line=False):
         """Create hierarchical component lines (parent → children)."""
@@ -358,16 +343,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             if not record.product_id:
                 raise UserError(_('Please select a product before loading components.'))
 
-            root_node = record._build_lead_tree(record.product_id, required_qty=1.0)
-            record._mark_critical_path(root_node)
-            if not root_node:
-                raise UserError(_(
-                    'No component structure could be loaded for "%s".'
-                ) % record.product_id.display_name)
-
-            record.component_line_ids.unlink()
-            record.demand_line_ids.unlink()
-            record.summary_ids.unlink()
+            root_node = record._build_lead_tree(record.product_id)
             record._create_component_tree_lines(root_node)
             record.write({
                 'bom_id': root_node['bom'].id if root_node.get('bom') else False,
