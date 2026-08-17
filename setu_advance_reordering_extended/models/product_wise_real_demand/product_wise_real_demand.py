@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 import logging
+from datetime import datetime
 from statistics import mean
 from types import SimpleNamespace
 
+from dateutil import relativedelta as dateutil_relativedelta
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
 
 _logger = logging.getLogger(__name__)
 
@@ -115,6 +118,47 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Summary',
         readonly=True,
     )
+    purchase_ids = fields.One2many(
+        'purchase.order',
+        'real_demand_id',
+        string='Purchase Orders',
+    )
+    purchase_count = fields.Integer(
+        string='Purchase order count',
+        compute='_compute_purchase_count',
+    )
+    production_ids = fields.One2many(
+        'mrp.production',
+        'real_demand_id',
+        string='Manufacturing Orders',
+    )
+    production_count = fields.Integer(
+        string='Manufacturing order count',
+        compute='_compute_production_count',
+    )
+    has_purchase_action_summary = fields.Boolean(
+        string='Has Purchase Action',
+        compute='_compute_summary_action_flags',
+    )
+    has_production_action_summary = fields.Boolean(
+        string='Has Production Action',
+        compute='_compute_summary_action_flags',
+    )
+    currency_id = fields.Many2one(
+        'res.currency',
+        string='Currency',
+        related='company_id.currency_id',
+    )
+    reorder_amount = fields.Monetary(
+        string='Reorder amount',
+        help='Reorder amount will be calculated from the generated demands',
+        copy=False,
+    )
+    minimum_reorder_amount = fields.Monetary(
+        string='Min order amount',
+        related='vendor_id.minimum_reorder_amount',
+        help='Minimum reorder amount defined by vendors',
+    )
     buffer_security_days = fields.Integer(
         string='Coverage days',
         help=(
@@ -151,6 +195,21 @@ class AdvanceReorderProductRealDemand(models.Model):
     def _onchange_vendor_selection_strategy(self):
         if self.vendor_selection_strategy != 'specific_vendor':
             self.vendor_id = False
+
+    def _compute_purchase_count(self):
+        for record in self:
+            record.purchase_count = len(record.purchase_ids)
+
+    def _compute_production_count(self):
+        for record in self:
+            record.production_count = len(record.production_ids)
+
+    @api.depends('summary_ids', 'summary_ids.order_action')
+    def _compute_summary_action_flags(self):
+        for record in self:
+            actions = set(record.summary_ids.mapped('order_action'))
+            record.has_purchase_action_summary = 'purchase' in actions
+            record.has_production_action_summary = 'production' in actions
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -831,6 +890,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Create summary lines from demand lines, same as Reorder with Real Demand verify."""
         self.ensure_one()
         summary_vals = []
+        reorder_total_amount = 0.0
         for line in self.demand_line_ids:
             summary_by_product = self._get_summary_vals_by_product(summary_vals)
             if not line.product_id or line.product_id.id in summary_by_product:
@@ -843,29 +903,462 @@ class AdvanceReorderProductRealDemand(models.Model):
             if demanded_qty <= 0:
                 continue
 
+            order_action = self._get_order_action(line.product_id)
             line_vals = self._prepare_net_demand_summary_line_vals(
                 product=line.product_id,
                 order_qty=demanded_qty,
                 demanded_qty=demanded_qty,
-                order_action=self._get_order_action(line.product_id),
+                order_action=order_action,
                 warehouse_group=line.warehouse_group_id,
                 company_id=self.company_id,
             )
+            if order_action == 'purchase':
+                _vendor_moq, _purchase_qty, price = self._get_purchase_details(
+                    line.product_id, self.company_id, demanded_qty, demanded_qty
+                )
+                reorder_total_amount += round(demanded_qty) * (price or 0.0)
+            else:
+                reorder_total_amount += round(demanded_qty) * (line.product_id.standard_price or 0.0)
             summary_vals.append((0, 0, line_vals))
-        return summary_vals
+        return summary_vals, reorder_total_amount
 
     def action_verify(self):
         """Verify button: create summary lines with Action, then set state to verified."""
         for record in self:
             if not record.demand_line_ids:
                 raise UserError(_('Please validate demand before verifying.'))
-            summary_vals = record.prepare_reorder_summary_vals()
+            summary_vals, reorder_amount = record.prepare_reorder_summary_vals()
             record.summary_ids.unlink()
-            write_vals = {'state': 'no_data'}
+            write_vals = {
+                'state': 'no_data',
+                'reorder_amount': 0.0,
+            }
             if summary_vals:
                 write_vals = {
                     'summary_ids': summary_vals,
                     'state': 'verified',
+                    'reorder_amount': reorder_amount,
                 }
             record.write(write_vals)
         return True
+
+    # -------------------------------------------------------------------------
+    # Purchase / Manufacturing order generation (same as Reorder with Real Demand)
+    # -------------------------------------------------------------------------
+
+    def _get_order_warehouse_pairs(self):
+        """Return (warehouse_group, default_warehouse) pairs used for PO/MO creation."""
+        self.ensure_one()
+        pairs = []
+        seen = set()
+        warehouse_groups = self.summary_ids.mapped('warehouse_group_id')
+        warehouse_groups |= self.demand_line_ids.mapped('warehouse_group_id')
+        if not warehouse_groups:
+            warehouse_groups = self.env['stock.warehouse.group'].search([
+                ('company_id', '=', self.company_id.id),
+            ])
+        for warehouse_group in warehouse_groups:
+            if not warehouse_group or warehouse_group.id in seen:
+                continue
+            seen.add(warehouse_group.id)
+            warehouses = warehouse_group.warehouse_ids.filtered(
+                lambda warehouse: warehouse.company_id == self.company_id
+            )
+            default_warehouse = warehouses[:1] or warehouse_group.warehouse_ids[:1]
+            if not default_warehouse:
+                continue
+            pairs.append((warehouse_group, default_warehouse))
+        if not pairs:
+            raise UserError(_(
+                'Please configure Warehouse Groups with warehouses for company "%s".'
+            ) % self.company_id.display_name)
+        return pairs
+
+    def _get_date_planned(self, partner_id, product_id, product_qty, start_date):
+        """Same planned date calculation as Reorder with Real Demand."""
+        days = self.company_id.po_lead or 0
+        days += product_id._select_seller(
+            partner_id=partner_id,
+            quantity=product_qty,
+            date=fields.Date.context_today(self, start_date),
+            uom_id=product_id.uom_po_id,
+        ).delay or 0.0
+        date_planned = start_date + dateutil_relativedelta.relativedelta(days=days)
+        return date_planned.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+
+    def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
+        """Same PO line preparation as Reorder with Real Demand (extended)."""
+        partner = partner or self.vendor_id
+        if not partner:
+            raise UserError(_('A vendor is required to prepare purchase order lines.'))
+
+        summaries = summary_lines if summary_lines is not None else self.summary_ids
+        company_for_tax = self.company_id or self.env.company
+        po_line_vals = []
+
+        for summary_line in summaries:
+            product_id = summary_line.product_id
+            if not product_id:
+                continue
+
+            demand_lines = self.demand_line_ids.filtered(
+                lambda demand, pid=product_id.id, wgid=warehouse_group_id.id: (
+                    demand.product_id.id == pid
+                    and demand.warehouse_group_id.id == wgid
+                    and demand.demand_adjustment_qty > 0.0
+                )
+            )
+            if demand_lines:
+                total_demand = sum(
+                    self.demand_line_ids.filtered(
+                        lambda demand, pid=product_id.id: demand.product_id.id == pid
+                    ).mapped('demand_adjustment_qty')
+                ) or 1.0
+                wh_demand = sum(demand_lines.mapped('demand_adjustment_qty'))
+                sharing_percentage = round((wh_demand / total_demand) * 100) or 0.0
+                if summary_line.demanded_qty <= summary_line.vendor_moq:
+                    quantity = (summary_line.vendor_moq * sharing_percentage) / 100
+                else:
+                    quantity = (
+                        summary_line.to_be_ordered_in_purchase_uom
+                        if summary_line.to_be_ordered_in_purchase_uom > 0
+                        else wh_demand
+                    )
+                    if summary_line.to_be_ordered_in_purchase_uom > 0 and total_demand:
+                        quantity = (
+                            summary_line.to_be_ordered_in_purchase_uom * sharing_percentage
+                        ) / 100
+            else:
+                if (
+                    summary_line.warehouse_group_id
+                    and summary_line.warehouse_group_id.id != warehouse_group_id.id
+                ):
+                    continue
+                if summary_line.vendor_moq > 0 and summary_line.demanded_qty <= summary_line.vendor_moq:
+                    quantity = summary_line.vendor_moq
+                else:
+                    quantity = (
+                        summary_line.to_be_ordered_in_purchase_uom
+                        if summary_line.to_be_ordered_in_purchase_uom > 0
+                        else summary_line.order_qty
+                    )
+
+            if not quantity:
+                continue
+
+            date_planned = self._get_date_planned(partner, product_id, quantity, datetime.today())
+            product_lang = product_id.with_prefetch().with_context(
+                lang=partner.lang,
+                partner_id=partner.id,
+            )
+            company_id = self.company_id or False
+            if company_id:
+                ps_info = product_id.seller_ids.filtered(
+                    lambda seller, pid=partner.id, cid=company_id: (
+                        seller.partner_id.id == pid
+                        and seller.company_id == cid
+                        and seller.currency_id == cid.currency_id
+                    )
+                )
+            else:
+                ps_info = product_id.seller_ids.filtered(
+                    lambda seller, pid=partner.id: seller.partner_id.id == pid
+                )
+
+            ps_info_have_min_qty = ps_info.filtered(lambda seller: seller.reorder_minimum_quantity > 0)
+            if ps_info_have_min_qty:
+                ps_info_have_min_qty = ps_info_have_min_qty.filtered(
+                    lambda seller, qty=quantity: seller.reorder_minimum_quantity <= qty
+                ).sorted(key=lambda seller: seller.reorder_minimum_quantity, reverse=True)
+                if ps_info_have_min_qty:
+                    ps_info = ps_info_have_min_qty[0]
+
+            ps_info = ps_info and len(ps_info) > 1 and ps_info[0] or ps_info
+            price_unit = ps_info.price if ps_info else product_id.standard_price
+
+            name = product_lang.display_name
+            if product_lang.description_purchase:
+                name += '\n' + product_lang.description_purchase
+
+            taxes = product_id.supplier_taxes_id
+            taxes_id = fpos.map_tax(taxes) if fpos else taxes
+            if taxes_id:
+                taxes_id = taxes_id.filtered(lambda tax: tax.company_id.id == company_for_tax.id)
+
+            po_line_vals.append((0, 0, {
+                'name': name,
+                'product_id': product_id.id,
+                'product_qty': round(quantity),
+                'price_unit': price_unit,
+                'product_uom': (
+                    product_id.uom_po_id.id
+                    if summary_line.to_be_ordered_in_purchase_uom > 0
+                    else product_id.uom_id.id
+                ),
+                'date_planned': date_planned,
+                'taxes_id': [(6, 0, taxes_id.ids)],
+            }))
+        return po_line_vals
+
+    def create_purchase_order(self, default_warehouse, warehouse_group_id, partner=None, summary_lines=None):
+        """Same purchase order creation as Reorder with Real Demand."""
+        partner = partner or self.vendor_id
+        if not partner:
+            raise UserError(_('A vendor is required to create a purchase order.'))
+        origins = self.name
+        purchase_date = datetime.today()
+        company_id = self.company_id
+        fpos = self.env['account.fiscal.position'].with_company(company_id)._get_fiscal_position(partner)
+        fpos = fpos or False
+        order_line_vals = self._prepare_purchase_order_line_vals(
+            fpos, warehouse_group_id, partner=partner, summary_lines=summary_lines
+        )
+        if not order_line_vals:
+            return True
+
+        dates = [fields.Datetime.from_string(value[2]['date_planned']) for value in order_line_vals]
+        procurement_date_planned = dates and max(dates) or False
+        purchase_order_obj = self.env['purchase.order'].with_user(self.user_id).with_company(company_id)
+        existing_po = purchase_order_obj.search([
+            ('real_demand_id', '=', self.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', '=', company_id.id),
+            ('state', 'in', ['draft', 'sent']),
+        ], limit=1)
+        if existing_po:
+            updated_date_planned = existing_po.date_planned
+            if procurement_date_planned and existing_po.date_planned:
+                updated_date_planned = max(existing_po.date_planned, procurement_date_planned)
+            elif procurement_date_planned and not existing_po.date_planned:
+                updated_date_planned = procurement_date_planned
+            existing_po.write({
+                'order_line': order_line_vals,
+                'date_planned': updated_date_planned,
+            })
+            return existing_po
+
+        vals = {
+            'partner_id': partner.id,
+            'user_id': self.user_id and self.user_id.id or self.env.user.id,
+            'picking_type_id': default_warehouse.in_type_id.id,
+            'company_id': company_id.id,
+            'currency_id': partner.with_company(
+                company_id
+            ).property_purchase_currency_id.id or company_id.currency_id.id,
+            'origin': origins,
+            'payment_term_id': partner.with_company(company_id).property_supplier_payment_term_id.id,
+            'date_order': purchase_date,
+            'fiscal_position_id': fpos.id if fpos else False,
+            'order_line': order_line_vals,
+            'real_demand_id': self.id,
+            'date_planned': procurement_date_planned,
+        }
+        return purchase_order_obj.create(vals)
+
+    def get_vendor_product_mapping_dict(self, purchase_summaries):
+        """Same vendor/product mapping as Reorder with Real Demand."""
+        product_ids = purchase_summaries.mapped('product_id')
+        vendor_product_dict = {}
+        if self.vendor_selection_strategy == 'specific_vendor':
+            if not self.vendor_id:
+                raise UserError(_('Please select a vendor for the specific vendor strategy.'))
+            vendor_product_dict.update({self.vendor_id.id: product_ids.ids})
+        elif self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
+            return vendor_product_dict
+        elif self.vendor_selection_strategy in ('sequence', 'price', 'delay'):
+            products_without_vendor = self.env['product.product']
+            for product in product_ids:
+                seller = product.with_context({
+                    'sort_by': self.vendor_selection_strategy,
+                    'op_company': self.company_id,
+                })._select_seller(quantity=None)
+                if not seller or not seller.partner_id:
+                    products_without_vendor |= product
+                    continue
+                partner_id = seller.partner_id.id
+                vendor_product_dict.setdefault(partner_id, []).append(product.id)
+            if products_without_vendor:
+                strategy_label = dict(
+                    self._fields['vendor_selection_strategy'].selection
+                ).get(self.vendor_selection_strategy, self.vendor_selection_strategy)
+                raise ValidationError(_(
+                    'No vendor found for the following product(s) with vendor selection '
+                    'strategy "%(strategy)s":\n%(products)s',
+                    strategy=strategy_label,
+                    products='\n'.join(
+                        '- %s' % product.display_name for product in products_without_vendor
+                    ),
+                ))
+        else:
+            for product in product_ids:
+                seller = product.with_context({
+                    'sort_by': self.vendor_selection_strategy,
+                    'op_company': self.company_id,
+                })._select_seller(quantity=None)
+                if not seller or not seller.partner_id:
+                    continue
+                partner_id = seller.partner_id.id
+                vendor_product_dict.setdefault(partner_id, []).append(product.id)
+        return vendor_product_dict
+
+    def action_open_po_vendor_wizard(self):
+        """Open wizard to assign a vendor per summary line."""
+        self.ensure_one()
+        wizard = self.env['advance.reorder.product.real.demand.po.vendor.wizard'].create({
+            'real_demand_id': self.id,
+        })
+        return {
+            'name': _('Select vendors for purchase'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.product.real.demand.po.vendor.wizard',
+            'view_mode': 'form',
+            'res_id': wizard.id,
+            'target': 'new',
+            'context': dict(self.env.context),
+        }
+
+    def action_create_reorder_purchase_order(self):
+        """Creates purchase orders from purchase summary lines based on vendor selection strategy."""
+        self.ensure_one()
+        purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
+        if not purchase_summaries:
+            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+
+        if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
+            return self.action_open_po_vendor_wizard()
+
+        vendor_product_dict = self.get_vendor_product_mapping_dict(purchase_summaries)
+        for vendor_id, product_list in vendor_product_dict.items():
+            partner = self.env['res.partner'].browse(vendor_id)
+            summary_lines = purchase_summaries.filtered(
+                lambda summary, products=product_list: summary.product_id.id in products
+            )
+            if (
+                self.vendor_selection_strategy == 'specific_vendor'
+                and partner.vendor_rule in ['both', 'minimum_order_value']
+                and self.reorder_amount < self.minimum_reorder_amount
+            ):
+                raise UserError(_(
+                    "Can not create purchase order because reorder doesn't fulfil "
+                    "vendor's minimum order amount's rule."
+                ))
+            for warehouse_group, default_warehouse in self._get_order_warehouse_pairs():
+                self.create_purchase_order(
+                    default_warehouse,
+                    warehouse_group,
+                    partner=partner,
+                    summary_lines=summary_lines,
+                )
+
+        if self.purchase_ids:
+            self.write({'state': 'done'})
+        return True
+
+    def action_create_reorder_manufacturing_orders(self):
+        """Opens the wizard to select a warehouse for creating manufacturing orders."""
+        self.ensure_one()
+        wizard = self.env['advance.reorder.product.real.demand.mrp.wizard'].create({
+            'real_demand_id': self.id,
+        })
+        return {
+            'name': _('Select Warehouse To Create Manufacturing Order'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.product.real.demand.mrp.wizard',
+            'view_mode': 'form',
+            'res_id': wizard.id,
+            'target': 'new',
+            'context': dict(self.env.context),
+        }
+
+    def create_manufacturing_orders(self, warehouse_id):
+        """Creates manufacturing orders from verified production summary lines."""
+        self.ensure_one()
+        if self.state != 'verified':
+            raise UserError(_(
+                'Manufacturing orders can only be created from a verified product-wise demand.'
+            ))
+        production_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'production' and summary.order_qty > 0
+        )
+        if self.production_ids:
+            raise UserError(_(
+                'Manufacturing orders have already been created for this product-wise demand.'
+            ))
+
+        Production = self.env['mrp.production'].with_user(self.user_id).with_company(self.company_id)
+        mo_vals_list = self._prepare_manufacturing_order_vals_from_summary(
+            production_summaries, warehouse_id
+        )
+        if not mo_vals_list:
+            raise UserError(_('No manufacturing orders to create.'))
+
+        Production.create(mo_vals_list)
+        return True
+
+    def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse):
+        """Prepares manufacturing order values from production summary lines."""
+        mo_vals_list = []
+        for summary_line in production_summaries:
+            product = summary_line.product_id
+            if not product:
+                continue
+            picking_type = warehouse.manu_type_id
+            if not picking_type:
+                raise UserError(_(
+                    'No manufacturing operation type configured for warehouse %s.',
+                    warehouse.display_name,
+                ))
+            bom = self._get_product_bom(product)
+            if not bom:
+                _logger.warning(
+                    "No BOM found for product %s (ID: %s).",
+                    product.display_name,
+                    product.id,
+                )
+                continue
+            mo_vals_list.append({
+                'product_id': product.id,
+                'product_qty': summary_line.order_qty,
+                'bom_id': bom.id,
+                'picking_type_id': picking_type.id,
+                'company_id': self.company_id.id,
+                'origin': self.name,
+                'real_demand_id': self.id,
+            })
+        return mo_vals_list
+
+    def action_purchase_count(self):
+        """Opens linked purchase orders."""
+        self.ensure_one()
+        action = self.env['ir.actions.actions']._for_xml_id('purchase.purchase_form_action')
+        purchases = self.mapped('purchase_ids')
+        if len(purchases) > 1:
+            action['domain'] = [('id', 'in', purchases.ids)]
+        elif purchases:
+            form_view = [(self.env.ref('purchase.purchase_order_form').id, 'form')]
+            if 'views' in action:
+                action['views'] = form_view + [
+                    (state, view) for state, view in action['views'] if view != 'form'
+                ]
+            else:
+                action['views'] = form_view
+            action['res_id'] = purchases.id
+        return action
+
+    def action_production_count(self):
+        """Opens linked manufacturing orders."""
+        self.ensure_one()
+        action = self.env['ir.actions.actions']._for_xml_id('mrp.mrp_production_action')
+        productions = self.mapped('production_ids')
+        if len(productions) > 1:
+            action['domain'] = [('id', 'in', productions.ids)]
+        elif productions:
+            form_view = [(self.env.ref('mrp.mrp_production_form_view').id, 'form')]
+            if 'views' in action:
+                action['views'] = form_view + [
+                    (state, view) for state, view in action['views'] if view != 'form'
+                ]
+            else:
+                action['views'] = form_view
+            action['res_id'] = productions.id
+        return action
