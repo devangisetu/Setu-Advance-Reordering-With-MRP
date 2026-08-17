@@ -16,3 +16,4 @@ access_create_reordering_component_warehouse_mapping,create.reordering.component
 access_advance_reorder_product_real_demand,advance.reorder.product.real.demand,model_advance_reorder_product_real_demand,base.group_user,1,1,1,1
 access_advance_reorder_product_component_line,advance.reorder.product.component.line,model_advance_reorder_product_component_line,base.group_user,1,1,1,1
 access_advance_reorder_product_real_demand_line,advance.reorder.product.real.demand.line,model_advance_reorder_product_real_demand_line,base.group_user,1,1,1,1
+access_advance_reorder_product_real_demand_summary,advance.reorder.product.real.demand.summary,model_advance_reorder_product_real_demand_summary,base.group_user,1,1,1,1

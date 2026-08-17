@@ -109,6 +109,12 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Demand Lines',
         readonly=True,
     )
+    summary_ids = fields.One2many(
+        'advance.reorder.product.real.demand.summary',
+        'real_demand_id',
+        string='Summary',
+        readonly=True,
+    )
     buffer_security_days = fields.Integer(
         string='Coverage days',
         help=(
@@ -138,8 +144,8 @@ class AdvanceReorderProductRealDemand(models.Model):
         self.calculated_lead_days = 0.0
         self.component_line_ids = [(5, 0, 0)]
         self.demand_line_ids = [(5, 0, 0)]
-        if self.state == 'inprogress':
-            self.state = 'draft'
+        self.summary_ids = [(5, 0, 0)]
+        self.state = 'draft'
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
@@ -302,11 +308,11 @@ class AdvanceReorderProductRealDemand(models.Model):
 
             record.component_line_ids.unlink()
             record.demand_line_ids.unlink()
+            record.summary_ids.unlink()
             record.write({
                 'bom_id': root_node['bom'].id,
                 'calculated_lead_days': root_node['calculated_lead_days'],
                 'component_line_ids': [(0, 0, values) for values in line_vals],
-                'state': 'inprogress',
             })
         return True
 
@@ -688,6 +694,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             vals.extend(self.prepare_reorder_line_vals(config, demand_data, is_mto_route=False))
 
         self.demand_line_ids.unlink()
+        self.summary_ids.unlink()
         write_vals = {'state': 'no_data'}
         if vals:
             write_vals = {
@@ -698,7 +705,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_validate(self):
-        """Validate button: calculate demand like Reorder with Real Demand."""
+        """Validate button: calculate demand and move to In Progress."""
         for record in self:
             if not record.component_line_ids:
                 raise UserError(_('Please load components before validating demand.'))
@@ -709,4 +716,156 @@ class AdvanceReorderProductRealDemand(models.Model):
             if not record.buffer_security_days:
                 raise UserError(_('Please set Coverage days before validating demand.'))
             record.action_reorder_confirm()
+        return True
+
+    def _filter_supplier_info_by_moq(self, ps_info, total_demand):
+        """Same supplier MOQ filter as Reorder with Real Demand."""
+        ps_info_have_min_qty = ps_info.filtered(lambda info: info.reorder_minimum_quantity > 0)
+        if ps_info_have_min_qty:
+            ps_info_have_min_qty = ps_info_have_min_qty.filtered(
+                lambda info: info.reorder_minimum_quantity <= total_demand
+            ).sorted(key=lambda info: info.reorder_minimum_quantity, reverse=True)
+            if ps_info_have_min_qty:
+                return ps_info_have_min_qty[0]
+        if ps_info and len(ps_info) > 1:
+            return ps_info[0]
+        return ps_info
+
+    def _get_product_supplier_info(self, product, company_id, total_demand):
+        """Same supplier resolution as Reorder with Real Demand."""
+        self.ensure_one()
+        partner = False
+        if self.vendor_selection_strategy == 'specific_vendor':
+            partner = self.vendor_id
+            if not partner:
+                return self.env['product.supplierinfo']
+        elif self.vendor_selection_strategy == 'on_po_creation':
+            return self.env['product.supplierinfo']
+        else:
+            seller = product.with_context({
+                'sort_by': self.vendor_selection_strategy,
+                'op_company': company_id or self.company_id or self.env.company,
+            })._select_seller(quantity=total_demand)
+            if not seller or not seller.partner_id:
+                return self.env['product.supplierinfo']
+            partner = seller.partner_id
+
+        if company_id:
+            ps_info = product.seller_ids.filtered(
+                lambda info: info.partner_id == partner and (
+                    info.company_id == company_id or not info.company_id
+                )
+            )
+        else:
+            ps_info = product.seller_ids.filtered(lambda info: info.partner_id == partner)
+        return self._filter_supplier_info_by_moq(ps_info, total_demand)
+
+    def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
+        """Same purchase MOQ/qty/price details as Reorder with Real Demand."""
+        vendor_moq = 0
+        purchase_qty = 0
+        price = product.standard_price or 0.0
+        ps_info = self._get_product_supplier_info(product, company_id, demanded_qty)
+        if ps_info:
+            vendor_moq = ps_info.reorder_minimum_quantity
+            purchase_qty = round(
+                product.uom_id._compute_quantity(qty=order_qty, to_unit=product.uom_po_id)
+            )
+            if demanded_qty < vendor_moq:
+                purchase_qty = vendor_moq
+            if company_id and ps_info.currency_id != company_id.currency_id:
+                price = ps_info.currency_id._convert(
+                    ps_info.price,
+                    company_id.currency_id,
+                    company_id,
+                    self.reorder_date or fields.Date.context_today(self),
+                    False,
+                )
+            else:
+                price = ps_info.price
+        return vendor_moq, purchase_qty, price
+
+    def _get_order_action(self, product):
+        """Same action selection as Reorder with Real Demand."""
+        route_names = set(product.route_ids.mapped('name'))
+        if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
+            return 'production'
+        if {'Buy', 'Replenish on Order (MTO)'} <= route_names:
+            return 'purchase'
+        if product.reorder_product_classification in ('finished_good', 'semi_finished_good'):
+            return 'production'
+        return 'purchase'
+
+    def _get_summary_vals_by_product(self, summary_vals):
+        return {
+            command[2]['product_id']: command[2]
+            for command in summary_vals
+            if command[0] == 0 and command[2].get('product_id')
+        }
+
+    def _prepare_net_demand_summary_line_vals(
+            self, product, order_qty, demanded_qty, order_action, warehouse_group, company_id=None
+    ):
+        """Same summary line preparation as Reorder with Real Demand."""
+        weight = max(product.weight or 1.0, 1.0)
+        line_volume = order_qty * (product.volume or 0.0) * weight
+        company_id = company_id or self.env.company
+        vendor_moq = 0
+        purchase_qty = 0
+        if order_action == 'purchase':
+            vendor_moq, purchase_qty, _price = self._get_purchase_details(
+                product, company_id, demanded_qty, order_qty
+            )
+        return {
+            'product_id': product.id,
+            'demanded_qty': demanded_qty,
+            'vendor_moq': vendor_moq,
+            'order_qty': round(order_qty),
+            'total_volume': line_volume,
+            'to_be_ordered_in_purchase_uom': purchase_qty,
+            'order_action': order_action,
+            'warehouse_group_id': warehouse_group.id if warehouse_group else False,
+        }
+
+    def prepare_reorder_summary_vals(self):
+        """Create summary lines from demand lines, same as Reorder with Real Demand verify."""
+        self.ensure_one()
+        summary_vals = []
+        for line in self.demand_line_ids:
+            summary_by_product = self._get_summary_vals_by_product(summary_vals)
+            if not line.product_id or line.product_id.id in summary_by_product:
+                continue
+
+            product_lines = self.demand_line_ids.filtered(
+                lambda demand_line: demand_line.product_id.id == line.product_id.id
+            )
+            demanded_qty = sum(product_lines.mapped('demand_adjustment_qty'))
+            if demanded_qty <= 0:
+                continue
+
+            line_vals = self._prepare_net_demand_summary_line_vals(
+                product=line.product_id,
+                order_qty=demanded_qty,
+                demanded_qty=demanded_qty,
+                order_action=self._get_order_action(line.product_id),
+                warehouse_group=line.warehouse_group_id,
+                company_id=self.company_id,
+            )
+            summary_vals.append((0, 0, line_vals))
+        return summary_vals
+
+    def action_verify(self):
+        """Verify button: create summary lines with Action, then set state to verified."""
+        for record in self:
+            if not record.demand_line_ids:
+                raise UserError(_('Please validate demand before verifying.'))
+            summary_vals = record.prepare_reorder_summary_vals()
+            record.summary_ids.unlink()
+            write_vals = {'state': 'no_data'}
+            if summary_vals:
+                write_vals = {
+                    'summary_ids': summary_vals,
+                    'state': 'verified',
+                }
+            record.write(write_vals)
         return True

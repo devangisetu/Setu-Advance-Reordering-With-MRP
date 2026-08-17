@@ -48,10 +48,14 @@
             <form string="Product-Wise Real Demand">
                 <header>
                     <button name="action_load_components" type="object" string="Load Components"
-                            class="btn-primary" invisible="not product_id or state not in ('draft', 'inprogress')"/>
+                            class="btn-primary"
+                            invisible="not product_id or component_line_ids"/>
                     <button name="action_validate" type="object" string="Validate"
                             class="btn-primary"
-                            invisible="not component_line_ids or state not in ('inprogress', 'no_data')"/>
+                            invisible="not component_line_ids or state != 'draft'"/>
+                    <button name="action_verify" type="object" string="Verify"
+                            class="btn-primary"
+                            invisible="state != 'inprogress'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,inprogress,verified,done,cancel"/>
                 </header>
@@ -119,6 +123,28 @@
                                     <field name="expected_sales"/>
                                     <field name="demanded_qty"/>
                                     <field name="demand_adjustment_qty"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Summary" name="summary_lines"
+                              invisible="not summary_ids">
+                            <field name="summary_ids" nolabel="1">
+                                <list create="0" delete="0" editable="bottom">
+                                    <field name="warehouse_group_id" optional="hide"/>
+                                    <field name="product_id" readonly="1"/>
+                                    <field name="product_volume" readonly="1"/>
+                                    <field name="volume_uom_name" string="Volume UOM" readonly="1"/>
+                                    <field name="product_weight" readonly="1"/>
+                                    <field name="demanded_qty" readonly="1"/>
+                                    <field name="vendor_moq" readonly="1"/>
+                                    <field name="order_qty" readonly="1"/>
+                                    <field name="uom_id" readonly="1"/>
+                                    <field name="to_be_ordered_in_purchase_uom" readonly="1"/>
+                                    <field name="uom_po_id" readonly="1"/>
+                                    <field name="total_volume" readonly="1"/>
+                                    <field name="is_order_moq" column_invisible="True" readonly="1"/>
+                                    <field name="order_action"
+                                           readonly="parent.state in ('done', 'cancel')"/>
                                 </list>
                             </field>
                         </page>
