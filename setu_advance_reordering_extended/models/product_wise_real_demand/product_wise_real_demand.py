@@ -102,25 +102,25 @@ class AdvanceReorderProductRealDemand(models.Model):
     )
     component_line_ids = fields.One2many(
         'advance.reorder.product.component.line',
-        'real_demand_id',
+        'product_wise_reorder_id',
         string='Component Lines',
         readonly=True,
     )
     demand_line_ids = fields.One2many(
         'advance.reorder.product.wise.process.line',
-        'real_demand_id',
+        'product_wise_reorder_id',
         string='Demand Lines',
         readonly=True,
     )
     summary_ids = fields.One2many(
         'advance.reorder.product.wise.order.summary',
-        'real_demand_id',
+        'product_wise_reorder_id',
         string='Summary',
         readonly=True,
     )
     purchase_ids = fields.One2many(
         'purchase.order',
-        'real_demand_id',
+        'product_wise_reorder_id',
         string='Purchase Orders',
     )
     purchase_count = fields.Integer(
@@ -129,7 +129,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     )
     production_ids = fields.One2many(
         'mrp.production',
-        'real_demand_id',
+        'product_wise_reorder_id',
         string='Manufacturing Orders',
     )
     production_count = fields.Integer(
@@ -1120,7 +1120,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         procurement_date_planned = dates and max(dates) or False
         purchase_order_obj = self.env['purchase.order'].with_user(self.user_id).with_company(company_id)
         existing_po = purchase_order_obj.search([
-            ('real_demand_id', '=', self.id),
+            ('product_wise_reorder_id', '=', self.id),
             ('partner_id', '=', partner.id),
             ('company_id', '=', company_id.id),
             ('state', 'in', ['draft', 'sent']),
@@ -1150,7 +1150,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             'date_order': purchase_date,
             'fiscal_position_id': fpos.id if fpos else False,
             'order_line': order_line_vals,
-            'real_demand_id': self.id,
+            'product_wise_reorder_id': self.id,
             'date_planned': procurement_date_planned,
         }
         return purchase_order_obj.create(vals)
@@ -1205,7 +1205,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Open wizard to assign a vendor per summary line."""
         self.ensure_one()
         wizard = self.env['advance.reorder.product.real.demand.po.vendor.wizard'].create({
-            'real_demand_id': self.id,
+            'product_wise_reorder_id': self.id,
         })
         return {
             'name': _('Select vendors for purchase'),
@@ -1258,7 +1258,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Opens the wizard to select a warehouse for creating manufacturing orders."""
         self.ensure_one()
         wizard = self.env['advance.reorder.product.real.demand.mrp.wizard'].create({
-            'real_demand_id': self.id,
+            'product_wise_reorder_id': self.id,
         })
         return {
             'name': _('Select Warehouse To Create Manufacturing Order'),
@@ -1323,7 +1323,7 @@ class AdvanceReorderProductRealDemand(models.Model):
                 'picking_type_id': picking_type.id,
                 'company_id': self.company_id.id,
                 'origin': self.name,
-                'real_demand_id': self.id,
+                'product_wise_reorder_id': self.id,
             })
         return mo_vals_list
 

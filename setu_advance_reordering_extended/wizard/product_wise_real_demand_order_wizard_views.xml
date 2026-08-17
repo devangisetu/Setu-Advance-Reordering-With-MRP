@@ -7,7 +7,7 @@
             <form string="Select vendors for purchase">
                 <sheet>
                     <group>
-                        <field name="real_demand_id" readonly="1"/>
+                        <field name="product_wise_reorder_id" readonly="1"/>
                     </group>
                     <group string="Bulk vendor assignment">
                         <field name="bulk_vendor_id"/>
@@ -42,7 +42,7 @@
                 <sheet>
                     <group>
                         <group>
-                            <field name="real_demand_id" readonly="1"/>
+                            <field name="product_wise_reorder_id" readonly="1"/>
                         </group>
                         <group>
                             <field name="warehouse_id" required="1"/>

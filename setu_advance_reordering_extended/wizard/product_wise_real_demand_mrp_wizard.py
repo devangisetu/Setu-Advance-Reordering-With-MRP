@@ -6,9 +6,9 @@ from odoo.exceptions import UserError
 class ProductWiseRealDemandMrpWizard(models.TransientModel):
     _name = 'advance.reorder.product.real.demand.mrp.wizard'
     _description = 'Product-Wise Real Demand Manufacturing Wizard'
-    _rec_name = 'real_demand_id'
+    _rec_name = 'product_wise_reorder_id'
 
-    real_demand_id = fields.Many2one(
+    product_wise_reorder_id = fields.Many2one(
         'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
@@ -27,9 +27,9 @@ class ProductWiseRealDemandMrpWizard(models.TransientModel):
     def create(self, vals_list):
         records = super().create(vals_list)
         for rec in records:
-            if not rec.real_demand_id:
+            if not rec.product_wise_reorder_id:
                 continue
-            production_summaries = rec.real_demand_id.summary_ids.filtered(
+            production_summaries = rec.product_wise_reorder_id.summary_ids.filtered(
                 lambda summary: summary.order_action == 'production'
             )
             if not production_summaries:
@@ -44,7 +44,7 @@ class ProductWiseRealDemandMrpWizard(models.TransientModel):
         self.ensure_one()
         if not self.warehouse_id:
             raise UserError(_('Please select a warehouse to create manufacturing orders.'))
-        self.real_demand_id.create_manufacturing_orders(self.warehouse_id)
+        self.product_wise_reorder_id.create_manufacturing_orders(self.warehouse_id)
         return {'type': 'ir.actions.act_window_close'}
 
 

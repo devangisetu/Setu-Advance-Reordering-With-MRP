@@ -9,7 +9,7 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
     _name = 'advance.reorder.product.real.demand.po.vendor.wizard'
     _description = 'Assign vendors before creating purchase orders (Product-Wise Real Demand)'
 
-    real_demand_id = fields.Many2one(
+    product_wise_reorder_id = fields.Many2one(
         'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
@@ -30,9 +30,9 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
     def create(self, vals_list):
         records = super().create(vals_list)
         for rec in records:
-            if not rec.real_demand_id:
+            if not rec.product_wise_reorder_id:
                 continue
-            purchase_summaries = rec.real_demand_id.summary_ids.filtered(
+            purchase_summaries = rec.product_wise_reorder_id.summary_ids.filtered(
                 lambda summary: summary.order_action == 'purchase'
             )
             if not purchase_summaries:
@@ -45,7 +45,7 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
 
     def action_confirm(self):
         self.ensure_one()
-        real_demand = self.real_demand_id
+        real_demand = self.product_wise_reorder_id
         if not real_demand.summary_ids:
             raise UserError(_('There are no summary lines to purchase.'))
         for line in self.line_ids:
@@ -163,7 +163,7 @@ class ProductWiseRealDemandPoVendorWizardLine(models.TransientModel):
         if not product or not vendor:
             return self.env['product.supplierinfo']
 
-        real_demand = self.wizard_id.real_demand_id
+        real_demand = self.wizard_id.product_wise_reorder_id
         company_id = real_demand.company_id or self.env.company
         supplier_lines = product.seller_ids.filtered(
             lambda seller: seller.partner_id in (vendor, vendor.parent_id)

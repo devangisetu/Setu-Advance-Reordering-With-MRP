@@ -7,7 +7,7 @@ class AdvanceReorderProductRealDemandSummary(models.Model):
     _description = 'Product-Wise Real Demand Summary'
     _order = 'product_id, id'
 
-    real_demand_id = fields.Many2one(
+    product_wise_reorder_id = fields.Many2one(
         'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
