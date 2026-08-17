@@ -343,13 +343,20 @@ class AdvanceReorderProductRealDemand(models.Model):
         for child in node['critical_children']:
             self._mark_critical_path(child)
 
-    def _flatten_tree(self, node, line_vals):
-        line_vals.append({
+    def _create_component_tree_lines(self, node, parent_line=False):
+        """Create hierarchical component lines (parent → children)."""
+        self.ensure_one()
+        ComponentLine = self.env['advance.reorder.product.component.line']
+        line = ComponentLine.create({
+            'product_wise_reorder_id': self.id,
+            'parent_id': parent_line.id if parent_line else False,
+            'level': node.get('level', 0),
             'product_id': node['product'].id,
             'calculated_lead_days': node['calculated_lead_days'],
         })
         for child in node['children']:
-            self._flatten_tree(child, line_vals)
+            self._create_component_tree_lines(child, parent_line=line)
+        return line
 
     def action_load_components(self):
         for record in self:
@@ -358,9 +365,7 @@ class AdvanceReorderProductRealDemand(models.Model):
 
             root_node = record._build_lead_tree(record.product_id, required_qty=1.0)
             record._mark_critical_path(root_node)
-            line_vals = []
-            record._flatten_tree(root_node, line_vals)
-            if not line_vals:
+            if not root_node:
                 raise UserError(_(
                     'No component structure could be loaded for "%s".'
                 ) % record.product_id.display_name)
@@ -368,10 +373,10 @@ class AdvanceReorderProductRealDemand(models.Model):
             record.component_line_ids.unlink()
             record.demand_line_ids.unlink()
             record.summary_ids.unlink()
+            record._create_component_tree_lines(root_node)
             record.write({
-                'bom_id': root_node['bom'].id,
+                'bom_id': root_node['bom'].id if root_node.get('bom') else False,
                 'calculated_lead_days': root_node['calculated_lead_days'],
-                'component_line_ids': [(0, 0, values) for values in line_vals],
             })
         return True
 
