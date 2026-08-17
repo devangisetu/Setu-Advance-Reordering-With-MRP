@@ -3,12 +3,12 @@ from odoo import api, fields, models
 
 
 class AdvanceReorderProductRealDemandSummary(models.Model):
-    _name = 'advance.reorder.product.real.demand.summary'
+    _name = 'advance.reorder.product.wise.order.summary'
     _description = 'Product-Wise Real Demand Summary'
     _order = 'product_id, id'
 
     real_demand_id = fields.Many2one(
-        'advance.reorder.product.real.demand',
+        'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
         ondelete='cascade',

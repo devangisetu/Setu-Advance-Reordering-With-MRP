@@ -3,12 +3,12 @@ from odoo import fields, models
 
 
 class AdvanceReorderProductRealDemandCalcLine(models.Model):
-    _name = 'advance.reorder.product.real.demand.line'
+    _name = 'advance.reorder.product.wise.process.line'
     _description = 'Product-Wise Real Demand Calculation Line'
     _order = 'product_id, warehouse_group_id, id'
 
     real_demand_id = fields.Many2one(
-        'advance.reorder.product.real.demand',
+        'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
         ondelete='cascade',

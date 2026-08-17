@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 
 class AdvanceReorderProductRealDemand(models.Model):
-    _name = 'advance.reorder.product.real.demand'
+    _name = 'advance.reorder.product.wise.process'
     _description = 'Product-Wise Real Demand'
     _order = 'create_date desc, id desc'
     _check_company_auto = True
@@ -107,13 +107,13 @@ class AdvanceReorderProductRealDemand(models.Model):
         readonly=True,
     )
     demand_line_ids = fields.One2many(
-        'advance.reorder.product.real.demand.line',
+        'advance.reorder.product.wise.process.line',
         'real_demand_id',
         string='Demand Lines',
         readonly=True,
     )
     summary_ids = fields.One2many(
-        'advance.reorder.product.real.demand.summary',
+        'advance.reorder.product.wise.order.summary',
         'real_demand_id',
         string='Summary',
         readonly=True,

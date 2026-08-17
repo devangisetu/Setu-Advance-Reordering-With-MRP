@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <record id="view_advance_reorder_product_real_demand_list" model="ir.ui.view">
-        <field name="name">advance.reorder.product.real.demand.list</field>
-        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="name">advance.reorder.product.wise.process.list</field>
+        <field name="model">advance.reorder.product.wise.process</field>
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
@@ -17,8 +17,8 @@
     </record>
 
     <record id="view_advance_reorder_product_real_demand_search" model="ir.ui.view">
-        <field name="name">advance.reorder.product.real.demand.search</field>
-        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="name">advance.reorder.product.wise.process.search</field>
+        <field name="model">advance.reorder.product.wise.process</field>
         <field name="arch" type="xml">
             <search>
                 <field name="name"/>
@@ -42,8 +42,8 @@
     </record>
 
     <record id="view_advance_reorder_product_real_demand_form" model="ir.ui.view">
-        <field name="name">advance.reorder.product.real.demand.form</field>
-        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="name">advance.reorder.product.wise.process.form</field>
+        <field name="model">advance.reorder.product.wise.process</field>
         <field name="arch" type="xml">
             <form string="Product-Wise Real Demand">
                 <header>
@@ -207,7 +207,7 @@
 
     <record id="action_advance_reorder_product_real_demand" model="ir.actions.act_window">
         <field name="name">Product-Wise Real Demand</field>
-        <field name="res_model">advance.reorder.product.real.demand</field>
+        <field name="res_model">advance.reorder.product.wise.process</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="view_advance_reorder_product_real_demand_search"/>
     </record>

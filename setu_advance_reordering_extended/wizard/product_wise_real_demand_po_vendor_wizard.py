@@ -10,7 +10,7 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
     _description = 'Assign vendors before creating purchase orders (Product-Wise Real Demand)'
 
     real_demand_id = fields.Many2one(
-        'advance.reorder.product.real.demand',
+        'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
         ondelete='cascade',
@@ -71,7 +71,7 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
                     continue
                 vendor_to_summary_ids[wline.vendor_id].append(summary.id)
             for vendor, sum_ids in vendor_to_summary_ids.items():
-                summaries = self.env['advance.reorder.product.real.demand.summary'].browse(sum_ids)
+                summaries = self.env['advance.reorder.product.wise.order.summary'].browse(sum_ids)
                 if summaries:
                     real_demand.create_purchase_order(
                         default_warehouse,
@@ -123,7 +123,7 @@ class ProductWiseRealDemandPoVendorWizardLine(models.TransientModel):
         ondelete='cascade',
     )
     summary_line_id = fields.Many2one(
-        'advance.reorder.product.real.demand.summary',
+        'advance.reorder.product.wise.order.summary',
         string='Summary line',
         required=True,
         ondelete='cascade',

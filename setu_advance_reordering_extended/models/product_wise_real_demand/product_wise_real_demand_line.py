@@ -8,7 +8,7 @@ class AdvanceReorderProductRealDemandLine(models.Model):
     _order = 'product_id, id'
 
     real_demand_id = fields.Many2one(
-        'advance.reorder.product.real.demand',
+        'advance.reorder.product.wise.process',
         required=True,
         ondelete='cascade',
         index=True,

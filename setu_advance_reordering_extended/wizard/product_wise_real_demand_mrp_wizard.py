@@ -9,7 +9,7 @@ class ProductWiseRealDemandMrpWizard(models.TransientModel):
     _rec_name = 'real_demand_id'
 
     real_demand_id = fields.Many2one(
-        'advance.reorder.product.real.demand',
+        'advance.reorder.product.wise.process',
         string='Product-Wise Real Demand',
         required=True,
     )
@@ -59,7 +59,7 @@ class ProductWiseRealDemandMrpWizardLine(models.TransientModel):
         ondelete='cascade',
     )
     summary_line_id = fields.Many2one(
-        'advance.reorder.product.real.demand.summary',
+        'advance.reorder.product.wise.order.summary',
         string='Summary line',
         required=True,
         ondelete='cascade',
