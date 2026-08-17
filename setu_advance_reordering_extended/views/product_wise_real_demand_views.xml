@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_advance_reorder_product_real_demand_list" model="ir.ui.view">
+        <field name="name">advance.reorder.product.real.demand.list</field>
+        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="reorder_date"/>
+                <field name="product_id"/>
+                <field name="user_id"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="calculated_lead_days"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_advance_reorder_product_real_demand_search" model="ir.ui.view">
+        <field name="name">advance.reorder.product.real.demand.search</field>
+        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="product_id"/>
+                <field name="user_id"/>
+                <field name="vendor_id"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="In Progress" name="inprogress" domain="[('state', '=', 'inprogress')]"/>
+                <separator/>
+                <filter string="History Sales" name="history_sales"
+                        domain="[('generate_demand_with', '=', 'history_sales')]"/>
+                <filter string="Forecast Sales" name="forecast_sales"
+                        domain="[('generate_demand_with', '=', 'forecast_sales')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Product" name="group_product" context="{'group_by': 'product_id'}"/>
+                    <filter string="Responsible" name="group_user" context="{'group_by': 'user_id'}"/>
+                    <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_advance_reorder_product_real_demand_form" model="ir.ui.view">
+        <field name="name">advance.reorder.product.real.demand.form</field>
+        <field name="model">advance.reorder.product.real.demand</field>
+        <field name="arch" type="xml">
+            <form string="Product-Wise Real Demand">
+                <header>
+                    <button name="action_load_components" type="object" string="Load Components"
+                            class="btn-primary" invisible="not product_id or state not in ('draft', 'inprogress')"/>
+                    <button name="action_validate" type="object" string="Validate"
+                            class="btn-primary"
+                            invisible="not component_line_ids or state not in ('inprogress', 'no_data')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,inprogress,verified,done,cancel"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="company_id" readonly="state != 'draft'" required="1"
+                                   groups="base.group_multi_company"/>
+                            <field name="vendor_selection_strategy" required="1"
+                                   readonly="state != 'draft'"/>
+                            <field name="vendor_id" readonly="state != 'draft'"
+                                   invisible="vendor_selection_strategy != 'specific_vendor'"
+                                   required="vendor_selection_strategy == 'specific_vendor'"/>
+                            <field name="reorder_date" required="1" readonly="state != 'draft'"/>
+                            <field name="user_id" readonly="state != 'draft'"/>
+                            <field name="product_id" required="1" readonly="state != 'draft'"/>
+                            <field name="bom_id"/>
+                            <field name="calculated_lead_days"/>
+                        </group>
+                        <group string="Reorder for next X days">
+                            <field name="buffer_security_days" required="1" readonly="state != 'draft'"/>
+                            <field name="generate_demand_with" required="1" readonly="state != 'draft'"/>
+                            <field name="sales_start_date"
+                                   invisible="generate_demand_with != 'history_sales'"
+                                   required="generate_demand_with == 'history_sales'"
+                                   readonly="state != 'draft'"/>
+                            <field name="sales_end_date"
+                                   invisible="generate_demand_with != 'history_sales'"
+                                   required="generate_demand_with == 'history_sales'"
+                                   readonly="state != 'draft'"/>
+                            <field name="reorder_demand_growth"
+                                   invisible="generate_demand_with != 'history_sales'"
+                                   readonly="state != 'draft'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Component Lines" name="component_lines"
+                              invisible="not component_line_ids">
+                            <field name="component_line_ids" nolabel="1">
+                                <list create="0" edit="0" delete="0">
+                                    <field name="product_id"/>
+                                    <field name="calculated_lead_days"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Demand Calculation" name="demand_lines"
+                              invisible="not demand_line_ids">
+                            <field name="demand_line_ids" nolabel="1">
+                                <list create="0" edit="0" delete="0">
+                                    <field name="product_id"/>
+                                    <field name="warehouse_group_id" optional="hide"/>
+                                    <field name="average_daily_sale"
+                                           column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                                    <field name="sales_qty" optional="show"/>
+                                    <field name="consumed_qty" optional="show"/>
+                                    <field name="available_stock"/>
+                                    <field name="incoming_qty"/>
+                                    <field name="transit_time_sales"/>
+                                    <field name="stock_after_transit"/>
+                                    <field name="expected_sales"/>
+                                    <field name="demanded_qty"/>
+                                    <field name="demand_adjustment_qty"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_advance_reorder_product_real_demand" model="ir.actions.act_window">
+        <field name="name">Product-Wise Real Demand</field>
+        <field name="res_model">advance.reorder.product.real.demand</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_advance_reorder_product_real_demand_search"/>
+    </record>
+
+    <menuitem id="menu_advance_reorder_product_real_demand"
+              name="Product-Wise Real Demand"
+              parent="setu_advance_reordering.menu_sub_reordering_process"
+              action="action_advance_reorder_product_real_demand"
+              sequence="3"/>
+</odoo>

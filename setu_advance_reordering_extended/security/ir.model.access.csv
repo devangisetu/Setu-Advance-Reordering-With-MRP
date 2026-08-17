@@ -13,3 +13,6 @@ access_advance_reorder_mrp_wizard,advance.reorder.mrp.wizard,model_advance_reord
 access_advance_reorder_mrp_wizard_line,advance.reorder.mrp.wizard.line,model_advance_reorder_mrp_wizard_line,,1,1,1,1
 access_product_planning,product.planning,model_product_planning,base.group_user,1,1,1,1
 access_create_reordering_component_warehouse_mapping,create.reordering.component.warehouse.mapping,model_create_reordering_component_warehouse_mapping,base.group_user,1,1,1,1
+access_advance_reorder_product_real_demand,advance.reorder.product.real.demand,model_advance_reorder_product_real_demand,base.group_user,1,1,1,1
+access_advance_reorder_product_component_line,advance.reorder.product.component.line,model_advance_reorder_product_component_line,base.group_user,1,1,1,1
+access_advance_reorder_product_real_demand_line,advance.reorder.product.real.demand.line,model_advance_reorder_product_real_demand_line,base.group_user,1,1,1,1
