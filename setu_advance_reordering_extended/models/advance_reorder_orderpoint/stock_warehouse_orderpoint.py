@@ -472,8 +472,7 @@ class StockWarehouseOrderpoint(models.Model):
         to_process = list(self)
         processed = set()
         all_affected_orderpoints = self.env['stock.warehouse.orderpoint']
-        wizard_wh_id = self.env.context.get('wizard_component_planning_warehouse_id')
-        wizard_wh = self.env['stock.warehouse'].browse(wizard_wh_id) if wizard_wh_id else False
+        wizard_wh_by_company = self.env.context.get('wizard_component_warehouse_by_company') or {}
         while to_process:
             op = to_process.pop(0)
             key = (op.product_id.id, op.warehouse_id.id)
@@ -491,17 +490,25 @@ class StockWarehouseOrderpoint(models.Model):
                     if self._is_mto_product(product):
                         continue
                     if self._has_bom(product):
-                        target_wh_id = op.warehouse_id.id
-                        target_loc_id = op.location_id.id
+                        comp_wh_id = op.warehouse_id.id
+                        comp_loc_id = op.location_id.id
                     else:
-                        target_wh_id = wizard_wh.id if wizard_wh else op.warehouse_id.id
-                        target_loc_id = wizard_wh.lot_stock_id.id if wizard_wh else op.location_id.id
-                    comp_op = self._find_or_create_component_orderpoint(product, op, target_wh_id, target_loc_id)
+                        target_wh_id = wizard_wh_by_company.get(op.company_id.id)
+                        if target_wh_id:
+                            target_wh = self.env['stock.warehouse'].browse(target_wh_id)
+                            comp_wh_id = target_wh.id
+                            comp_loc_id = target_wh.lot_stock_id.id
+                        else:
+                            comp_wh_id = op.warehouse_id.id
+                            comp_loc_id = op.location_id.id
+                    comp_op = self._find_or_create_component_orderpoint(product, op, comp_wh_id, comp_loc_id)
                     all_affected_orderpoints |= comp_op
                     if (comp_op.product_id.id, comp_op.warehouse_id.id) not in processed:
                         to_process.append(comp_op)
         if all_affected_orderpoints:
             for op in all_affected_orderpoints:
+                op.with_context(prevent_component_recursion=True).recalculate_data()
+            for op in reversed(all_affected_orderpoints):
                 op.with_context(prevent_component_recursion=True).recalculate_data()
             all_affected_orderpoints.update_order_point_data()
 
@@ -510,10 +517,7 @@ class StockWarehouseOrderpoint(models.Model):
         return super().update_order_point_data()
 
     def recalculate_data(self):
-        """
-              added by: Aastha Vora | On: Oct - 16 - 2024 | Task: 998
-              use: Recalculate order point data.
-        """
+
         parent_ops = self.parent_orderpoint_ids
         if parent_ops:
             self.reset_all_data()
@@ -522,8 +526,8 @@ class StockWarehouseOrderpoint(models.Model):
             for parent_op in parent_ops:
                 parent_product = parent_op.product_id
                 parent_bom = parent_op.reorder_bom_id
-                if not parent_bom and parent_product.bom_ids:
-                    parent_bom = parent_product.bom_ids[0]
+                if not parent_bom:
+                    parent_bom = parent_product.get_default_bom(parent_op.company_id.id)
                 if parent_bom:
                     bom_line = parent_bom.bom_line_ids.filtered(lambda x: x.product_id == self.product_id)
                     if bom_line:
@@ -551,7 +555,6 @@ class StockWarehouseOrderpoint(models.Model):
                 'warehouse_changed': False
             })
             return True
-
         history_context = self._context.get('already_calculated_history', False)
         self.reset_all_data()
         if not history_context:
@@ -563,7 +566,8 @@ class StockWarehouseOrderpoint(models.Model):
             self.update_product_consumption_history()
             self.update_product_resupply_history()
         self.update_product_production_history()
-        self.update_product_subcontract_history()
+        if self.use_subcontracting_for_orderpoint:
+            self.update_product_subcontract_history()
         if self.use_scrap_for_orderpoint:
             self.update_product_scrap_history()
         self.env.invalidate_all()

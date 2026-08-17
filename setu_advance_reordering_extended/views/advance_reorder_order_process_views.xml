@@ -28,7 +28,7 @@
         <field name="inherit_id" ref="setu_advance_reordering.form_advance_reorder_orderprocess"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='generate_demand_with']" position="after">
-                <field name="calculate_demand_based_on_selected_bom" readonly="state != 'draft'"/>
+                <field name="calculate_demand_based_on_selected_bom" readonly="state != 'draft'" invisible="generate_demand_with == 'forecast_sales'"/>
                 <field name="has_purchase_action_summary" invisible="1"/>
                 <field name="has_production_action_summary" invisible="1"/>
                 <field name="show_subcontracting_qty" invisible="1"/>
@@ -94,7 +94,7 @@
                 <field name="route_ids" widget="many2many_tags" string="Routes" optional="show"
                        readonly="1"/>
                 <field name="demand_planning_type" string="Demand Planning Type" required="1"
-                       optional="show"/>
+                       optional="show" column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
             </xpath>
 
             <xpath expr="//page[@name='reorder_lines']//field[@name='transit_time_sales']" position="before">

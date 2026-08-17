@@ -22,6 +22,7 @@ class ProductProduct(models.Model):
         string='Reorder BOM',
         domain="['|', ('product_id', '=', id), '&', ('product_tmpl_id', '=', product_tmpl_id), ('product_id', '=', False), ('active', '=', True)]",
         help='BOM used for MRP component demand calculation.',
+        company_dependent=True,
     )
 
     reorder_bom_type = fields.Selection([

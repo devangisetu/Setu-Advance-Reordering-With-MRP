@@ -46,7 +46,12 @@
                 <separator string="Auto Orderpoint" invisible="operation != 'orderpoint' or orderpoint_operation not in ['create_order_point', 'update_order_point']" style="margin-top: 25px; font-size: 18px;"/>
                 <field name="auto_create_components_orderpoint" widget="boolean_toggle" invisible="operation != 'orderpoint' or orderpoint_operation != 'create_order_point'"/>
                 <field name="specific_bom" widget="boolean_toggle" invisible="operation != 'orderpoint' or orderpoint_operation != 'create_order_point'"/>
-                <field name="component_planning_warehouse_id" options="{'no_create': True, 'no_edit': True}" invisible="operation != 'orderpoint' or orderpoint_operation != 'create_order_point' or not auto_create_components_orderpoint"/>
+                <field name="component_warehouse_ids" invisible="operation != 'orderpoint' or orderpoint_operation != 'create_order_point' or not auto_create_components_orderpoint">
+                    <list editable="bottom">
+                        <field name="company_id" options="{'no_create': True, 'no_edit': True}"/>
+                        <field name="warehouse_id" options="{'no_create': True, 'no_edit': True}"/>
+                    </list>
+                </field>
                 <field name="update_component_orderpoint" widget="boolean_toggle" invisible="operation != 'orderpoint' or orderpoint_operation != 'update_order_point'"/>
             </xpath>
             <xpath expr="//field[@name='product_ids']" position="before">
