@@ -55,30 +55,18 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
                 )
 
         po_before = len(real_demand.purchase_ids)
-        for warehouse_group, default_warehouse in real_demand._get_order_warehouse_pairs():
-            vendor_to_summary_ids = defaultdict(list)
-            for wline in self.line_ids:
-                summary = wline.summary_line_id
-                product = summary.product_id
-                demand_line = real_demand.demand_line_ids.filtered(
-                    lambda demand, prod=product, wg=warehouse_group: (
-                        demand.product_id == prod
-                        and demand.warehouse_group_id == wg
-                        and demand.demand_adjustment_qty > 0.0
-                    )
+        default_warehouse = real_demand._get_default_warehouse()
+        vendor_to_summary_ids = defaultdict(list)
+        for wline in self.line_ids:
+            vendor_to_summary_ids[wline.vendor_id].append(wline.summary_line_id.id)
+        for vendor, sum_ids in vendor_to_summary_ids.items():
+            summaries = self.env['advance.reorder.product.wise.order.summary'].browse(sum_ids)
+            if summaries:
+                real_demand.create_purchase_order(
+                    default_warehouse,
+                    partner=vendor,
+                    summary_lines=summaries,
                 )
-                if not demand_line and summary.warehouse_group_id != warehouse_group:
-                    continue
-                vendor_to_summary_ids[wline.vendor_id].append(summary.id)
-            for vendor, sum_ids in vendor_to_summary_ids.items():
-                summaries = self.env['advance.reorder.product.wise.order.summary'].browse(sum_ids)
-                if summaries:
-                    real_demand.create_purchase_order(
-                        default_warehouse,
-                        warehouse_group,
-                        partner=vendor,
-                        summary_lines=summaries,
-                    )
 
         if len(real_demand.purchase_ids) == po_before:
             raise UserError(_(

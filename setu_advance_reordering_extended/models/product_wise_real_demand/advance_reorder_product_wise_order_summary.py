@@ -15,7 +15,6 @@ class AdvanceReorderProductRealDemandSummary(models.Model):
         index=True,
     )
     product_id = fields.Many2one('product.product', string='Product', required=True)
-    warehouse_group_id = fields.Many2one('stock.warehouse.group', string='Warehouse group')
     vendor_moq = fields.Integer(string='Vendor MOQ')
     demanded_qty = fields.Integer(string='Demand')
     order_qty = fields.Integer(string='To be ordered')

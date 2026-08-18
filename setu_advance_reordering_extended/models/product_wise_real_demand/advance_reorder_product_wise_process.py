@@ -219,9 +219,12 @@ class AdvanceReorderProductRealDemand(models.Model):
     # -------------------------------------------------------------------------
 
     def _get_product_bom(self, product):
+        """Return header BOM for the main product, otherwise company-wise BOM."""
         self.ensure_one()
+        if product == self.product_id and self.bom_id:
+            return self.bom_id
         return (
-            product.reorder_bom_id
+            product.with_company(self.company_id).reorder_bom_id
             or product.get_default_bom(company_id=self.company_id.id)
             or self.env['mrp.bom']
         )
@@ -276,12 +279,12 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
         if is_manufactured:
-            bom = self.bom_id if level == 0 else self._get_product_bom(product)
-
+            bom = self._get_product_bom(product)
             if not bom:
-                raise ValidationError(_('Please select BOM first.'))
-
-            own_lead_days = bom.produce_delay
+                raise ValidationError(_(
+                    'Please select a BOM, or configure a company BOM for "%s".'
+                ) % product.display_name)
+            own_lead_days = bom.produce_delay or 0.0
         else:
             bom = False
             own_lead_days = self._get_purchase_lead_days(product)
@@ -361,17 +364,21 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
 
-    def _get_demand_configs(self):
-        """Build warehouse-group configs using calculated lead days."""
+    def _get_company_warehouses(self):
+        """All warehouses of the company set on this product-wise reorder."""
         self.ensure_one()
-        warehouse_groups = self.env['stock.warehouse.group'].search([
+        warehouses = self.env['stock.warehouse'].search([
             ('company_id', '=', self.company_id.id),
         ])
-        if not warehouse_groups:
+        if not warehouses:
             raise UserError(_(
-                'Please configure at least one Warehouse Group for company "%s".'
+                'No warehouse found for company "%s".'
             ) % self.company_id.display_name)
+        return warehouses
 
+    def _get_company_demand_period(self):
+        """Coverage dates for company-wise demand (no warehouse-group config)."""
+        self.ensure_one()
         reorder_date = fields.Datetime.to_datetime(self.reorder_date).date()
         lead_days = int(round(self.calculated_lead_days)) or 1
         arrival_offset = lead_days - 1 if lead_days > 0 else lead_days
@@ -380,24 +387,22 @@ class AdvanceReorderProductRealDemand(models.Model):
         buffer_days = self.buffer_security_days
         coverage_offset = buffer_days - 1 if buffer_days > 0 else buffer_days
         coverage_end = coverage_start + relativedelta(days=coverage_offset)
+        return SimpleNamespace(
+            order_date=reorder_date,
+            order_arrival_date=order_arrival_date,
+            advance_stock_start_date=coverage_start,
+            advance_stock_end_date=coverage_end,
+        )
 
-        configs = []
-        for warehouse_group in warehouse_groups:
-            if not warehouse_group.warehouse_ids:
-                continue
-            configs.append(SimpleNamespace(
-                warehouse_group_id=warehouse_group,
-                vendor_lead_days=lead_days,
-                order_date=reorder_date,
-                order_arrival_date=order_arrival_date,
-                advance_stock_start_date=coverage_start,
-                advance_stock_end_date=coverage_end,
-            ))
-        if not configs:
-            raise UserError(_(
-                'Warehouse Groups must contain at least one warehouse before validating demand.'
-            ))
-        return configs
+    def _get_product_lead_days(self, product):
+        """Lead days for demand: from this product's component line, else header."""
+        self.ensure_one()
+        component_line = self.component_line_ids.filtered(
+            lambda line: line.product_id == product
+        )[:1]
+        if component_line:
+            return int(round(component_line.calculated_lead_days)) or 1
+        return int(round(self.calculated_lead_days)) or 1
 
     def get_history_sales(self, products, warehouses, start_date, end_date):
         """Same as Reorder with Real Demand history sales query."""
@@ -415,23 +420,23 @@ class AdvanceReorderProductRealDemand(models.Model):
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_forecast_sales(self, products, warehouses, config):
+    def get_forecast_sales(self, products, warehouses, period):
         """Same as Reorder with Real Demand forecast sales query."""
         query = """
             Select * from get_reorder_forecast_data('%s', '%s', '%s', '%s', '%s', '%s')
         """ % (
-            str(config.order_date),
-            str(config.order_arrival_date),
-            str(config.advance_stock_start_date),
-            str(config.advance_stock_end_date),
+            str(period.order_date),
+            str(period.order_arrival_date),
+            str(period.advance_stock_start_date),
+            str(period.advance_stock_end_date),
             products,
             warehouses,
         )
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_sales_data(self, config, line_product_ids, is_sfg=False):
-        """Same as extended Reorder with Real Demand sales data selection."""
+    def get_sales_data(self, warehouses, line_product_ids, is_sfg=False):
+        """Company-wise sales data for all warehouses of this reorder company."""
         sales_driven_products = line_product_ids
         if not is_sfg:
             sales_driven_products = line_product_ids.filtered(
@@ -440,19 +445,17 @@ class AdvanceReorderProductRealDemand(models.Model):
         products = sales_driven_products and set(sales_driven_products.ids) or {}
         if not products:
             return []
-        warehouses = (
-            config.warehouse_group_id
-            and set(config.warehouse_group_id.warehouse_ids.ids)
-            or {}
-        )
+        warehouse_ids = set(warehouses.ids) if warehouses else {}
         if self.generate_demand_with == 'history_sales':
             return self.get_history_sales(
-                products, warehouses, self.sales_start_date, self.sales_end_date
+                products, warehouse_ids, self.sales_start_date, self.sales_end_date
             )
-        return self.get_forecast_sales(products, warehouses, config)
+        return self.get_forecast_sales(
+            products, warehouse_ids, self._get_company_demand_period()
+        )
 
-    def get_production_data(self, config, line_product_ids):
-        """Same as extended Reorder with Real Demand production data."""
+    def get_production_data(self, warehouses, line_product_ids):
+        """Company-wise production data for all warehouses of this reorder company."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
@@ -463,7 +466,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if not products:
             return []
 
-        warehouses = set(config.warehouse_group_id.warehouse_ids.ids or [])
+        warehouse_ids = set(warehouses.ids or [])
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
         query = """
@@ -472,12 +475,12 @@ class AdvanceReorderProductRealDemand(models.Model):
                 sum(ads) as ads
             from get_products_production_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
             group by product_id, product_name
-        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        """ % ('{}', products, '{}', warehouse_ids, start_date, end_date)
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_resupply_data(self, config, line_product_ids):
-        """Same as extended Reorder with Real Demand resupply data."""
+    def get_resupply_data(self, warehouses, line_product_ids):
+        """Company-wise subcontract/resupply data for this reorder company."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
         if not self.company_id.use_subcontracting_for_demand:
@@ -490,7 +493,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if not products:
             return []
 
-        warehouses = set(config.warehouse_group_id.warehouse_ids.ids or [])
+        warehouse_ids = set(warehouses.ids or [])
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
         query = """
@@ -500,12 +503,12 @@ class AdvanceReorderProductRealDemand(models.Model):
                 sum(ads) as ads
             from get_products_subcontracting_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
             group by product_id, product_name
-        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        """ % ('{}', products, '{}', warehouse_ids, start_date, end_date)
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_scrap_data(self, config, line_product_ids):
-        """Same as extended Reorder with Real Demand scrap data."""
+    def get_scrap_data(self, warehouses, line_product_ids):
+        """Company-wise scrap data for this reorder company."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
         if not self.company_id.use_scrap_for_demand:
@@ -515,7 +518,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if not products:
             return []
 
-        warehouses = set(config.warehouse_group_id.warehouse_ids.ids or [])
+        warehouse_ids = set(warehouses.ids or [])
         start_date = self.sales_start_date.strftime('%Y-%m-%d')
         end_date = self.sales_end_date.strftime('%Y-%m-%d')
         query = """
@@ -524,7 +527,7 @@ class AdvanceReorderProductRealDemand(models.Model):
                 sum(ads) as ads
             from get_products_scrap_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
             group by product_id, product_name
-        """ % ('{}', products, '{}', warehouses, start_date, end_date)
+        """ % ('{}', products, '{}', warehouse_ids, start_date, end_date)
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
@@ -608,9 +611,9 @@ class AdvanceReorderProductRealDemand(models.Model):
             'incoming': wh_incoming,
         }
 
-    def get_stock_move(self, product, config):
-        """Same incoming move lookup as Reorder with Real Demand."""
-        stock_location_ids = config.warehouse_group_id.warehouse_ids.mapped('lot_stock_id').ids
+    def get_stock_move(self, product, warehouses):
+        """Incoming moves for all warehouses of this reorder company."""
+        stock_location_ids = warehouses.mapped('lot_stock_id').ids
         return self.env['stock.move'].search([
             ('product_id', '=', product.id),
             ('state', 'not in', ['draft', 'cancel', 'done']),
@@ -632,20 +635,17 @@ class AdvanceReorderProductRealDemand(models.Model):
             return quantity - (quantity % round_qty)
         return quantity
 
-    def _prepare_base_line_vals(self, config, product):
-        """Prepare base demand line values for one product/warehouse group."""
-        wh_summary = self._get_warehouse_qty_summary(
-            product, config.warehouse_group_id.warehouse_ids
-        )
+    def _prepare_base_line_vals(self, warehouses, product):
+        """Prepare base demand line values for one product, company-wise."""
+        wh_summary = self._get_warehouse_qty_summary(product, warehouses)
         return {
-            'warehouse_group_id': config.warehouse_group_id.id,
             'product_id': product.id,
             'available_stock': wh_summary['available'],
             'incoming_qty': wh_summary['incoming'],
         }
 
-    def prepare_reorder_line_vals(self, config, demand_data, is_mto_route=False):
-        """Same demand quantity calculation as Reorder with Real Demand."""
+    def prepare_reorder_line_vals(self, warehouses, demand_data, is_mto_route=False):
+        """Company-wise demand using each product's component-line lead days."""
         vals = []
         reorder_demand_growth = (
             self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
@@ -653,13 +653,14 @@ class AdvanceReorderProductRealDemand(models.Model):
 
         for data in demand_data:
             product = self.env['product.product'].browse(data.get('product_id'))
-            reorder_line_vals = self._prepare_base_line_vals(config, product)
+            reorder_line_vals = self._prepare_base_line_vals(warehouses, product)
             net_on_hand = reorder_line_vals.get('available_stock', 0.0)
             ads = data.get('ads', 0.0)
+            lead_days = self._get_product_lead_days(product)
 
             if self.generate_demand_with == 'history_sales':
                 ads = reorder_demand_growth and ads + (ads * reorder_demand_growth) or ads
-                lead_days_demand = round(ads * config.vendor_lead_days, 2)
+                lead_days_demand = round(ads * lead_days, 2)
                 expected_sales = self.buffer_security_days * ads
             else:
                 lead_days_demand = data.get('lead_days_demand_stock', 0.0)
@@ -694,10 +695,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             })
 
             existing_line = self.demand_line_ids.filtered(
-                lambda line: (
-                    line.product_id == product
-                    and line.warehouse_group_id == config.warehouse_group_id
-                )
+                lambda line: line.product_id == product
             )
             if existing_line:
                 existing_line.write(reorder_line_vals)
@@ -707,32 +705,31 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     def action_reorder_confirm(self):
         """
-        Same demand generation flow as Reorder with Real Demand Validate:
-        merge sales/production/resupply/scrap ADS and create demand lines.
+        Company-wise demand generation for all warehouses of this reorder company.
+        Lead days come from each product's component line.
         """
         self.ensure_one()
         vals = []
-        configs = self._get_demand_configs()
+        warehouses = self._get_company_warehouses()
         product_ids = self.product_id
 
-        for config in configs:
-            line_product_ids = product_ids.filtered(lambda product: not product.is_kit_product)
-            kit_product_ids = product_ids.filtered(lambda product: product.is_kit_product)
-            line_product_ids |= self._get_kit_component(kit_product_ids)
+        line_product_ids = product_ids.filtered(lambda product: not product.is_kit_product)
+        kit_product_ids = product_ids.filtered(lambda product: product.is_kit_product)
+        line_product_ids |= self._get_kit_component(kit_product_ids)
 
-            sales_data = self.get_sales_data(config, line_product_ids)
-            production_data = []
-            scrap_data = []
-            resupply_data = []
-            if self.generate_demand_with == 'history_sales' and line_product_ids:
-                production_data = self.get_production_data(config, line_product_ids)
-                scrap_data = self.get_scrap_data(config, line_product_ids)
-                resupply_data = self.get_resupply_data(config, line_product_ids)
+        sales_data = self.get_sales_data(warehouses, line_product_ids)
+        production_data = []
+        scrap_data = []
+        resupply_data = []
+        if self.generate_demand_with == 'history_sales' and line_product_ids:
+            production_data = self.get_production_data(warehouses, line_product_ids)
+            scrap_data = self.get_scrap_data(warehouses, line_product_ids)
+            resupply_data = self.get_resupply_data(warehouses, line_product_ids)
 
-            demand_data = self._merge_ads_data(
-                sales_data, production_data, resupply_data, scrap_data
-            )
-            vals.extend(self.prepare_reorder_line_vals(config, demand_data, is_mto_route=False))
+        demand_data = self._merge_ads_data(
+            sales_data, production_data, resupply_data, scrap_data
+        )
+        vals.extend(self.prepare_reorder_line_vals(warehouses, demand_data, is_mto_route=False))
 
         self.demand_line_ids.unlink()
         self.summary_ids.unlink()
@@ -845,7 +842,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def _prepare_net_demand_summary_line_vals(
-            self, product, order_qty, demanded_qty, order_action, warehouse_group, company_id=None
+            self, product, order_qty, demanded_qty, order_action, company_id=None
     ):
         """Same summary line preparation as Reorder with Real Demand."""
         weight = max(product.weight or 1.0, 1.0)
@@ -865,7 +862,6 @@ class AdvanceReorderProductRealDemand(models.Model):
             'total_volume': line_volume,
             'to_be_ordered_in_purchase_uom': purchase_qty,
             'order_action': order_action,
-            'warehouse_group_id': warehouse_group.id if warehouse_group else False,
         }
 
     def prepare_reorder_summary_vals(self):
@@ -891,7 +887,6 @@ class AdvanceReorderProductRealDemand(models.Model):
                 order_qty=demanded_qty,
                 demanded_qty=demanded_qty,
                 order_action=order_action,
-                warehouse_group=line.warehouse_group_id,
                 company_id=self.company_id,
             )
             if order_action == 'purchase':
@@ -928,33 +923,11 @@ class AdvanceReorderProductRealDemand(models.Model):
     # Purchase / Manufacturing order generation (same as Reorder with Real Demand)
     # -------------------------------------------------------------------------
 
-    def _get_order_warehouse_pairs(self):
-        """Return (warehouse_group, default_warehouse) pairs used for PO/MO creation."""
+    def _get_default_warehouse(self):
+        """Default warehouse of the company set on this product-wise reorder."""
         self.ensure_one()
-        pairs = []
-        seen = set()
-        warehouse_groups = self.summary_ids.mapped('warehouse_group_id')
-        warehouse_groups |= self.demand_line_ids.mapped('warehouse_group_id')
-        if not warehouse_groups:
-            warehouse_groups = self.env['stock.warehouse.group'].search([
-                ('company_id', '=', self.company_id.id),
-            ])
-        for warehouse_group in warehouse_groups:
-            if not warehouse_group or warehouse_group.id in seen:
-                continue
-            seen.add(warehouse_group.id)
-            warehouses = warehouse_group.warehouse_ids.filtered(
-                lambda warehouse: warehouse.company_id == self.company_id
-            )
-            default_warehouse = warehouses[:1] or warehouse_group.warehouse_ids[:1]
-            if not default_warehouse:
-                continue
-            pairs.append((warehouse_group, default_warehouse))
-        if not pairs:
-            raise UserError(_(
-                'Please configure Warehouse Groups with warehouses for company "%s".'
-            ) % self.company_id.display_name)
-        return pairs
+        warehouses = self._get_company_warehouses()
+        return warehouses[:1]
 
     def _get_date_planned(self, partner_id, product_id, product_qty, start_date):
         """Same planned date calculation as Reorder with Real Demand."""
@@ -968,8 +941,8 @@ class AdvanceReorderProductRealDemand(models.Model):
         date_planned = start_date + dateutil_relativedelta.relativedelta(days=days)
         return date_planned.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
 
-    def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
-        """Same PO line preparation as Reorder with Real Demand (extended)."""
+    def _prepare_purchase_order_line_vals(self, fpos, partner=None, summary_lines=None):
+        """Prepare PO lines from company-wise summary lines."""
         partner = partner or self.vendor_id
         if not partner:
             raise UserError(_('A vendor is required to prepare purchase order lines.'))
@@ -983,47 +956,14 @@ class AdvanceReorderProductRealDemand(models.Model):
             if not product_id:
                 continue
 
-            demand_lines = self.demand_line_ids.filtered(
-                lambda demand, pid=product_id.id, wgid=warehouse_group_id.id: (
-                    demand.product_id.id == pid
-                    and demand.warehouse_group_id.id == wgid
-                    and demand.demand_adjustment_qty > 0.0
-                )
-            )
-            if demand_lines:
-                total_demand = sum(
-                    self.demand_line_ids.filtered(
-                        lambda demand, pid=product_id.id: demand.product_id.id == pid
-                    ).mapped('demand_adjustment_qty')
-                ) or 1.0
-                wh_demand = sum(demand_lines.mapped('demand_adjustment_qty'))
-                sharing_percentage = round((wh_demand / total_demand) * 100) or 0.0
-                if summary_line.demanded_qty <= summary_line.vendor_moq:
-                    quantity = (summary_line.vendor_moq * sharing_percentage) / 100
-                else:
-                    quantity = (
-                        summary_line.to_be_ordered_in_purchase_uom
-                        if summary_line.to_be_ordered_in_purchase_uom > 0
-                        else wh_demand
-                    )
-                    if summary_line.to_be_ordered_in_purchase_uom > 0 and total_demand:
-                        quantity = (
-                            summary_line.to_be_ordered_in_purchase_uom * sharing_percentage
-                        ) / 100
+            if summary_line.vendor_moq > 0 and summary_line.demanded_qty <= summary_line.vendor_moq:
+                quantity = summary_line.vendor_moq
             else:
-                if (
-                    summary_line.warehouse_group_id
-                    and summary_line.warehouse_group_id.id != warehouse_group_id.id
-                ):
-                    continue
-                if summary_line.vendor_moq > 0 and summary_line.demanded_qty <= summary_line.vendor_moq:
-                    quantity = summary_line.vendor_moq
-                else:
-                    quantity = (
-                        summary_line.to_be_ordered_in_purchase_uom
-                        if summary_line.to_be_ordered_in_purchase_uom > 0
-                        else summary_line.order_qty
-                    )
+                quantity = (
+                    summary_line.to_be_ordered_in_purchase_uom
+                    if summary_line.to_be_ordered_in_purchase_uom > 0
+                    else summary_line.order_qty
+                )
 
             if not quantity:
                 continue
@@ -1082,8 +1022,8 @@ class AdvanceReorderProductRealDemand(models.Model):
             }))
         return po_line_vals
 
-    def create_purchase_order(self, default_warehouse, warehouse_group_id, partner=None, summary_lines=None):
-        """Same purchase order creation as Reorder with Real Demand."""
+    def create_purchase_order(self, default_warehouse, partner=None, summary_lines=None):
+        """Same purchase order creation as Reorder with Real Demand, company-wise."""
         partner = partner or self.vendor_id
         if not partner:
             raise UserError(_('A vendor is required to create a purchase order.'))
@@ -1093,7 +1033,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         fpos = self.env['account.fiscal.position'].with_company(company_id)._get_fiscal_position(partner)
         fpos = fpos or False
         order_line_vals = self._prepare_purchase_order_line_vals(
-            fpos, warehouse_group_id, partner=partner, summary_lines=summary_lines
+            fpos, partner=partner, summary_lines=summary_lines
         )
         if not order_line_vals:
             return True
@@ -1224,13 +1164,11 @@ class AdvanceReorderProductRealDemand(models.Model):
                     "Can not create purchase order because reorder doesn't fulfil "
                     "vendor's minimum order amount's rule."
                 ))
-            for warehouse_group, default_warehouse in self._get_order_warehouse_pairs():
-                self.create_purchase_order(
-                    default_warehouse,
-                    warehouse_group,
-                    partner=partner,
-                    summary_lines=summary_lines,
-                )
+            self.create_purchase_order(
+                self._get_default_warehouse(),
+                partner=partner,
+                summary_lines=summary_lines,
+            )
 
         if self.purchase_ids:
             self.write({'state': 'done'})

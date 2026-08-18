@@ -141,7 +141,6 @@
                             <field name="demand_line_ids" nolabel="1">
                                 <list create="0" edit="0" delete="0">
                                     <field name="product_id"/>
-                                    <field name="warehouse_group_id" optional="hide"/>
                                     <field name="average_daily_sale"
                                            column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
                                     <field name="sales_qty" optional="show"/>
@@ -160,7 +159,6 @@
                               invisible="not summary_ids">
                             <field name="summary_ids" nolabel="1">
                                 <list create="0" delete="0" editable="bottom">
-                                    <field name="warehouse_group_id" optional="hide"/>
                                     <field name="product_id" readonly="1"/>
                                     <field name="product_volume" readonly="1"/>
                                     <field name="volume_uom_name" string="Volume UOM" readonly="1"/>

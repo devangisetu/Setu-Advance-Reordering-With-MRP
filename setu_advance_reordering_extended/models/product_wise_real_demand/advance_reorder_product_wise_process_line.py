@@ -5,7 +5,7 @@ from odoo import fields, models
 class AdvanceReorderProductRealDemandCalcLine(models.Model):
     _name = 'advance.reorder.product.wise.process.line'
     _description = 'Product-Wise Real Demand Calculation Line'
-    _order = 'product_id, warehouse_group_id, id'
+    _order = 'product_id, id'
 
     product_wise_reorder_id = fields.Many2one(
         'advance.reorder.product.wise.process',
@@ -15,7 +15,6 @@ class AdvanceReorderProductRealDemandCalcLine(models.Model):
         index=True,
     )
     product_id = fields.Many2one('product.product', string='Product', required=True)
-    warehouse_group_id = fields.Many2one('stock.warehouse.group', string='WH Group')
     average_daily_sale = fields.Float(string='ADS', help='Average daily sales')
     available_stock = fields.Float(string='Free qty')
     incoming_qty = fields.Float(string='Incoming')
