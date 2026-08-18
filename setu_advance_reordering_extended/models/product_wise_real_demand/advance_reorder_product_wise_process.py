@@ -226,38 +226,41 @@ class AdvanceReorderProductRealDemand(models.Model):
             or self.env['mrp.bom']
         )
 
-    def _get_purchase_lead_days(self, product, subcontractors=False):
+    def _get_purchase_lead_days(self, product):
         self.ensure_one()
+
         purchase_lines = self.env['purchase.order.line'].search([
             ('product_id', '=', product.id),
             ('order_id.state', 'in', ('purchase', 'done')),
             ('order_id.company_id', '=', self.company_id.id),
         ])
+
         lead_days = []
+
         for purchase_line in purchase_lines:
-            if subcontractors and purchase_line.order_id.partner_id not in subcontractors:
+            if purchase_line.move_ids.picking_id.state != 'done':
                 continue
-            receipt_dates = purchase_line.move_ids.filtered(
-                lambda move: move.state == 'done' and move.date
-            ).mapped('date')
-            if receipt_dates and purchase_line.order_id.date_order:
+            receipt_dates = purchase_line.move_ids.picking_id.mapped('date_done')
+            approve_date = purchase_line.order_id.date_approve
+
+            if receipt_dates and approve_date:
                 delay = (
-                    min(receipt_dates) - purchase_line.order_id.date_order
-                ).total_seconds() / 86400
+                        min(receipt_dates).date() - approve_date.date()
+                ).days
+
                 if delay >= 0:
                     lead_days.append(delay)
-        if lead_days:
-            return mean(lead_days)
 
-        sellers = product.seller_ids
-        if subcontractors:
-            sellers = sellers.filtered(lambda seller: seller.partner_id in subcontractors)
-        if sellers:
-            return mean(sellers.mapped('delay'))
-        return 0.0
+        return mean(lead_days) if lead_days else 0.0
 
-    def _build_lead_tree(self, product, parent_product=False, level=0, visited_products=None):
-        """Build BOM tree and calculate lead days using critical path."""
+    def _calculate_product_lead_days(
+            self,
+            product,
+            parent_product=False,
+            level=0,
+            visited_products=None,
+    ):
+        """Calculate product lead days and prepare its BOM node."""
         self.ensure_one()
 
         visited_products = set(visited_products or set())
@@ -272,14 +275,11 @@ class AdvanceReorderProductRealDemand(models.Model):
             'semi_finished_good',
         )
 
-        # Get BOM only for FG / SFG
         if is_manufactured:
-            if level == 0:
-                bom = self.bom_id or self._get_product_bom(product)
-                if not bom:
-                    raise ValidationError(_('Please select BOM first.'))
-            else:
-                bom = self._get_product_bom(product)
+            bom = self.bom_id if level == 0 else self._get_product_bom(product)
+
+            if not bom:
+                raise ValidationError(_('Please select BOM first.'))
 
             own_lead_days = bom.produce_delay
         else:
@@ -293,25 +293,34 @@ class AdvanceReorderProductRealDemand(models.Model):
             'level': level,
             'own_lead_days': own_lead_days,
             'children': [],
+            'calculated_lead_days': own_lead_days,
         }
-
         next_visited_products = visited_products | {product.id}
 
-        # Only FG/SFG products have BOM component branches
-        if is_manufactured and bom:
-            for bom_line in bom.bom_line_ids:
-                component = bom_line.product_id
+        if bom:
+            self._calculate_child_lead_days(
+                node=node,
+                visited_products=next_visited_products,
+            )
 
-                child = self._build_lead_tree(
-                    component,
-                    parent_product=product,
-                    level=level + 1,
-                    visited_products=next_visited_products,
-                )
+        return node
 
-                node['children'].append(child)
+    def _calculate_child_lead_days(self, node, visited_products):
+        """Calculate all child lead days and update parent lead days."""
+        bom = node['bom']
+        for bom_line in bom.bom_line_ids:
+            component = bom_line.product_id
 
-        max_child_lead = max(
+            child_node = self._calculate_product_lead_days(
+                product=component,
+                parent_product=node['product'],
+                level=node['level'] + 1,
+                visited_products=visited_products,
+            )
+
+            node['children'].append(child_node)
+
+        max_child_lead_days = max(
             (
                 child['calculated_lead_days']
                 for child in node['children']
@@ -319,9 +328,10 @@ class AdvanceReorderProductRealDemand(models.Model):
             default=0.0,
         )
 
-        node['calculated_lead_days'] = own_lead_days + max_child_lead
-
-        return node
+        # Update parent lead days after all children are calculated
+        node['calculated_lead_days'] = (
+                node['own_lead_days'] + max_child_lead_days
+        )
 
     def _create_component_tree_lines(self, node, parent_line=False):
         """Create hierarchical component lines (parent → children)."""
@@ -343,17 +353,13 @@ class AdvanceReorderProductRealDemand(models.Model):
             if not record.product_id:
                 raise UserError(_('Please select a product before loading components.'))
 
-            root_node = record._build_lead_tree(record.product_id)
+            root_node = record._calculate_product_lead_days(record.product_id)
             record._create_component_tree_lines(root_node)
             record.write({
-                'bom_id': root_node['bom'].id if root_node.get('bom') else False,
                 'calculated_lead_days': root_node['calculated_lead_days'],
             })
         return True
 
-    # -------------------------------------------------------------------------
-    # Demand calculation (same logic as Reorder with Real Demand)
-    # -------------------------------------------------------------------------
 
     def _get_demand_configs(self):
         """Build warehouse-group configs using calculated lead days."""
