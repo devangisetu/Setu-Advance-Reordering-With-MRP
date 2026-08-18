@@ -204,7 +204,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     @api.onchange('product_id', 'company_id')
     def _onchange_product_id(self):
         for record in self:
-            record.bom_id = record._get_product_bom(record.product_id)
+            record.bom_id = record._get_product_bom(record.product_id) if record.product_id else False
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
