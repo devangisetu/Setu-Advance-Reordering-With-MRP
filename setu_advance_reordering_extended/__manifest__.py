@@ -37,7 +37,7 @@
         'db_function/get_product_scrap_history.sql',
         'db_function/update_product_scrap_history.sql',
         'wizard/advance_reorder_mrp_wizard_views.xml',
-        'wizard/product_wise_real_demand_order_wizard_views.xml',
+        'wizard/advance_reorder_po_vendor_wizard_views.xml',
         'views/advance_reorder_demand_source_views.xml',
         'views/advance_reorder_order_process_views.xml',
         'views/advance_reorder_product_wise_process_views.xml',

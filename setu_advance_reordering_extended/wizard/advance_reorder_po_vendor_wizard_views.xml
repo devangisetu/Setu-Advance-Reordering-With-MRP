@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_advance_reorder_po_vendor_wizard_form_inherit" model="ir.ui.view">
+        <field name="name">advance.reorder.po.vendor.wizard.form.inherit</field>
+        <field name="model">advance.reorder.po.vendor.wizard</field>
+        <field name="inherit_id" ref="setu_advance_reordering.view_advance_reorder_po_vendor_wizard_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='reorder_process_id']" position="before">
+                <field name="company_id" invisible="1"/>
+                <field name="show_vendor_selection" invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='reorder_process_id']" position="attributes">
+                <attribute name="invisible">not reorder_process_id</attribute>
+            </xpath>
+            <xpath expr="//field[@name='reorder_process_id']" position="after">
+                <field name="product_wise_reorder_id" readonly="1"
+                       invisible="not product_wise_reorder_id"/>
+                <field name="warehouse_id" required="product_wise_reorder_id"
+                       options="{'no_create': True}"
+                       domain="[('company_id', '=', company_id)]"
+                       invisible="not product_wise_reorder_id"/>
+            </xpath>
+            <xpath expr="//field[@name='bulk_vendor_id']/.." position="attributes">
+                <attribute name="invisible">not show_vendor_selection</attribute>
+            </xpath>
+            <xpath expr="//field[@name='is_selected']" position="attributes">
+                <attribute name="column_invisible">not parent.show_vendor_selection</attribute>
+            </xpath>
+            <xpath expr="//field[@name='summary_line_id']" position="after">
+                <field name="product_wise_summary_line_id" column_invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='vendor_moq']" position="attributes">
+                <attribute name="column_invisible">not parent.show_vendor_selection</attribute>
+            </xpath>
+            <xpath expr="//field[@name='vendor_id']" position="attributes">
+                <attribute name="column_invisible">not parent.show_vendor_selection</attribute>
+            </xpath>
+            <xpath expr="//button[@name='action_apply_bulk_vendor']" position="attributes">
+                <attribute name="invisible">not bulk_vendor_id or not show_vendor_selection</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

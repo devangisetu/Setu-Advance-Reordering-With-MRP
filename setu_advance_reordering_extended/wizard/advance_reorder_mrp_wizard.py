@@ -13,7 +13,7 @@ class ManufacturingOrderWizard(models.TransientModel):
     )
     product_wise_reorder_id = fields.Many2one(
         'advance.reorder.product.wise.process',
-        string='Product-Wise Reorder',
+        string='Reorder',
     )
     company_id = fields.Many2one(
         'res.company',

@@ -1161,31 +1161,43 @@ class AdvanceReorderProductRealDemand(models.Model):
                 vendor_product_dict.setdefault(partner_id, []).append(product.id)
         return vendor_product_dict
 
-    def action_open_po_vendor_wizard(self):
-        """Open wizard to assign a vendor per summary line."""
+    def action_create_reorder_purchase_order(self):
+        """Opens the PO vendor wizard to select a warehouse and create purchase orders."""
         self.ensure_one()
-        wizard = self.env['advance.reorder.product.real.demand.po.vendor.wizard'].create({
+        purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
+        if not purchase_summaries:
+            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+
+        wizard = self.env['advance.reorder.po.vendor.wizard'].create({
             'product_wise_reorder_id': self.id,
+            'company_id': self.company_id.id,
         })
+        wizard_name = _('Select vendors for purchase') if wizard.show_vendor_selection else _(
+            'Select Warehouse To Create Purchase Order'
+        )
         return {
-            'name': _('Select vendors for purchase'),
+            'name': wizard_name,
             'type': 'ir.actions.act_window',
-            'res_model': 'advance.reorder.product.real.demand.po.vendor.wizard',
+            'res_model': 'advance.reorder.po.vendor.wizard',
             'view_mode': 'form',
             'res_id': wizard.id,
             'target': 'new',
             'context': dict(self.env.context),
         }
 
-    def action_create_reorder_purchase_order(self):
-        """Creates purchase orders from purchase summary lines based on vendor selection strategy."""
+    def create_purchase_orders_for_warehouse(self, warehouse):
+        """Creates purchase orders on the selected warehouse using vendor selection strategy."""
         self.ensure_one()
+        if not warehouse:
+            raise UserError(_('Please select a warehouse to create purchase orders.'))
+        if self.state != 'verified':
+            raise UserError(_(
+                'Purchase orders can only be created from a verified product-wise demand.'
+            ))
+
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
-
-        if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
-            return self.action_open_po_vendor_wizard()
 
         vendor_product_dict = self.get_vendor_product_mapping_dict(purchase_summaries)
         for vendor_id, product_list in vendor_product_dict.items():
@@ -1203,7 +1215,7 @@ class AdvanceReorderProductRealDemand(models.Model):
                     "vendor's minimum order amount's rule."
                 ))
             self.create_purchase_order(
-                self._get_default_warehouse(),
+                warehouse,
                 partner=partner,
                 summary_lines=summary_lines,
             )
