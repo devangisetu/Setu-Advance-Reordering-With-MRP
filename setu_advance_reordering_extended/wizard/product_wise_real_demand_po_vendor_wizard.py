@@ -25,6 +25,7 @@ class ProductWiseRealDemandPoVendorWizard(models.TransientModel):
         'wizard_id',
         string='Products and vendors',
     )
+    company_id = fields.Many2one(comodel_name='res.company', string='Company')
 
     @api.model_create_multi
     def create(self, vals_list):

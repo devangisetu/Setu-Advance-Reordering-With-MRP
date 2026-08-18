@@ -1347,6 +1347,7 @@ class AdvanceReorderOrderProcess(models.Model):
         self.ensure_one()
         wizard = self.env['advance.reorder.mrp.wizard'].create({
             'reorder_process_id': self.id,
+            'company_id': self.company_id.id,
         })
         return {
             'name': _('Select Warehouse To Create Manufacturing Order'),

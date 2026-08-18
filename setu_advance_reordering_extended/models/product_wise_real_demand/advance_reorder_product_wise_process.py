@@ -1215,13 +1215,14 @@ class AdvanceReorderProductRealDemand(models.Model):
     def action_create_reorder_manufacturing_orders(self):
         """Opens the wizard to select a warehouse for creating manufacturing orders."""
         self.ensure_one()
-        wizard = self.env['advance.reorder.product.real.demand.mrp.wizard'].create({
+        wizard = self.env['advance.reorder.mrp.wizard'].create({
             'product_wise_reorder_id': self.id,
+            'company_id': self.company_id.id,
         })
         return {
             'name': _('Select Warehouse To Create Manufacturing Order'),
             'type': 'ir.actions.act_window',
-            'res_model': 'advance.reorder.product.real.demand.mrp.wizard',
+            'res_model': 'advance.reorder.mrp.wizard',
             'view_mode': 'form',
             'res_id': wizard.id,
             'target': 'new',

@@ -5,4 +5,3 @@ from . import advance_reorder_po_vendor_wizard
 from . import create_reordering
 from . import create_reordering_component_warehouse_mapping
 from . import product_wise_real_demand_po_vendor_wizard
-from . import product_wise_real_demand_mrp_wizard

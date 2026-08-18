@@ -19,5 +19,3 @@ access_advance_reorder_product_wise_process_line,advance.reorder.product.wise.pr
 access_advance_reorder_product_wise_order_summary,advance.reorder.product.wise.order.summary,model_advance_reorder_product_wise_order_summary,base.group_user,1,1,1,1
 access_product_wise_real_demand_po_vendor_wizard,advance.reorder.product.real.demand.po.vendor.wizard,model_advance_reorder_product_real_demand_po_vendor_wizard,base.group_user,1,1,1,1
 access_product_wise_real_demand_po_vendor_wizard_line,advance.reorder.product.real.demand.po.vendor.wizard.line,model_advance_reorder_product_real_demand_po_vendor_wizard_line,base.group_user,1,1,1,1
-access_product_wise_real_demand_mrp_wizard,advance.reorder.product.real.demand.mrp.wizard,model_advance_reorder_product_real_demand_mrp_wizard,base.group_user,1,1,1,1
-access_product_wise_real_demand_mrp_wizard_line,advance.reorder.product.real.demand.mrp.wizard.line,model_advance_reorder_product_real_demand_mrp_wizard_line,base.group_user,1,1,1,1
