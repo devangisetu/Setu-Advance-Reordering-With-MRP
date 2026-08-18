@@ -60,6 +60,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     company_id = fields.Many2one(
         'res.company',
         required=True,
+        tracking=True,
         default=lambda self: self.env.company,
     )
     vendor_selection_strategy = fields.Selection(
@@ -72,6 +73,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         ],
         string='Vendor selection strategy',
         default='sequence',
+        tracking=True,
         help=(
             'This field is useful when purchase order is created from order points '
             'that time system checks about the vendor which is suitable for placing an order '
@@ -82,19 +84,29 @@ class AdvanceReorderProductRealDemand(models.Model):
     vendor_id = fields.Many2one(
         'res.partner',
         string='Vendor',
+        tracking=True,
         help='Set the vendor to whom you want to place an order',
     )
     product_id = fields.Many2one(
         'product.product',
         string='Product',
+        tracking=True,
         required=True,
         check_company=True,
+    )
+    product_tmpl_id = fields.Many2one(
+        'product.template',
+        string='Product Template',
+        related='product_id.product_tmpl_id',
+        store=True,
     )
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
         copy=False,
+        tracking=True,
         check_company=True,
+        domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
     )
     calculated_lead_days = fields.Float(
         string='Lead Days',
