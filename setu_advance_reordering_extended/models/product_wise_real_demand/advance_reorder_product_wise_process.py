@@ -93,34 +93,40 @@ class AdvanceReorderProductRealDemand(models.Model):
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
+        copy=False,
         check_company=True,
     )
     calculated_lead_days = fields.Float(
-        string='Calculated Lead Days',
+        string='Lead Days',
         readonly=True,
+        copy=False,
         help='Recursive critical-path lead time for the selected product.',
     )
     component_line_ids = fields.One2many(
         'advance.reorder.product.component.line',
         'product_wise_reorder_id',
         string='Component Lines',
+        copy=False,
         readonly=True,
     )
     demand_line_ids = fields.One2many(
         'advance.reorder.product.wise.process.line',
         'product_wise_reorder_id',
         string='Demand Lines',
+        copy=False,
         readonly=True,
     )
     summary_ids = fields.One2many(
         'advance.reorder.product.wise.order.summary',
         'product_wise_reorder_id',
         string='Summary',
+        copy=False,
         readonly=True,
     )
     purchase_ids = fields.One2many(
         'purchase.order',
         'product_wise_reorder_id',
+        copy=False,
         string='Purchase Orders',
     )
     purchase_count = fields.Integer(
@@ -148,6 +154,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         'res.currency',
         string='Currency',
         related='company_id.currency_id',
+        store=True,
     )
     reorder_amount = fields.Monetary(
         string='Reorder amount',
@@ -182,14 +189,16 @@ class AdvanceReorderProductRealDemand(models.Model):
         help='Add percentage value if you want to calculate demand with growth',
     )
 
-    @api.onchange('product_id')
+    @api.onchange('product_id', 'company_id')
     def _onchange_product_id(self):
-        self.bom_id = False
+        for record in self:
+            record.bom_id = record._get_product_bom(record.product_id)
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
-        if self.vendor_selection_strategy != 'specific_vendor':
-            self.vendor_id = False
+        for record in self:
+            if record.vendor_selection_strategy != 'specific_vendor':
+                record.vendor_id = False
 
     def _compute_purchase_count(self):
         for record in self:
@@ -208,15 +217,13 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super().create(vals_list)
-        for record in records:
-            if record.name == _('New'):
-                record.name = _('PWD-%s') % record.id
-        return records
+        for vals in vals_list:
+            if vals.get('name', _('New')) == _('New'):
+                vals['name'] = self.env['ir.sequence'].next_by_code(
+                    'advance.reorder.product.wise.process'
+                ) or _('New')
+        return super().create(vals_list)
 
-    # -------------------------------------------------------------------------
-    # Lead time / component loading
-    # -------------------------------------------------------------------------
 
     def _get_product_bom(self, product):
         """Return header BOM for the main product, otherwise company-wise BOM."""
@@ -438,10 +445,6 @@ class AdvanceReorderProductRealDemand(models.Model):
     def get_sales_data(self, warehouses, line_product_ids, is_sfg=False):
         """Company-wise sales data for all warehouses of this reorder company."""
         sales_driven_products = line_product_ids
-        if not is_sfg:
-            sales_driven_products = line_product_ids.filtered(
-                lambda pr: pr.is_kit_component or pr.demand_planning_type in ('sales_driven', 'combined')
-            )
         products = sales_driven_products and set(sales_driven_products.ids) or {}
         if not products:
             return []
@@ -459,9 +462,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
-        production_driven_products = line_product_ids.filtered(
-            lambda pr: pr.demand_planning_type != 'sales_driven'
-        )
+        production_driven_products = line_product_ids
         products = set(production_driven_products.ids) if production_driven_products else set()
         if not products:
             return []
@@ -486,9 +487,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if not self.company_id.use_subcontracting_for_demand:
             return []
 
-        production_driven_products = line_product_ids.filtered(
-            lambda pr: pr.is_kit_component or pr.demand_planning_type != 'sales_driven'
-        )
+        production_driven_products = line_product_ids
         products = set(production_driven_products.ids) if production_driven_products else set()
         if not products:
             return []

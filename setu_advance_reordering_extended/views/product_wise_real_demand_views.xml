@@ -110,13 +110,18 @@
                                    required="vendor_selection_strategy == 'specific_vendor'"/>
                             <field name="reorder_date" required="1" readonly="state != 'draft'"/>
                             <field name="user_id" readonly="state != 'draft'"/>
-                            <field name="product_id" required="1" readonly="state != 'draft'"/>
-                            <field name="bom_id"/>
-                            <field name="calculated_lead_days"/>
                         </group>
                         <group string="Reorder for next X days">
                             <field name="buffer_security_days" required="1" readonly="state != 'draft'"/>
                             <field name="generate_demand_with" required="1" readonly="state != 'draft'"/>
+                        </group>
+                        <group string="Product Details">
+                            <field name="product_id" required="1" readonly="state != 'draft'"/>
+                            <field name="bom_id" readonly="state != 'draft'"
+                                   domain="['|', ('product_id', '=', product_id), '&amp;', ('product_tmpl_id', '=', product_id.product_tmpl_id), ('product_id', '=', False)]"/>
+                            <field name="calculated_lead_days"/>
+                        </group>
+                        <group string="Choose date to calculate Average sales">
                             <field name="sales_start_date"
                                    invisible="generate_demand_with != 'history_sales'"
                                    required="generate_demand_with == 'history_sales'"
@@ -226,5 +231,5 @@
               name="Product-Wise Real Demand"
               parent="setu_advance_reordering.menu_sub_reordering_process"
               action="action_advance_reorder_product_real_demand"
-              sequence="3"/>
+              sequence="2"/>
 </odoo>

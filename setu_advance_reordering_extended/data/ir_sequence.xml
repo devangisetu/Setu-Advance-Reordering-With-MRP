@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_advance_reorder_product_wise_process" model="ir.sequence">
+            <field name="name">Product-Wise Real Demand</field>
+            <field name="code">advance.reorder.product.wise.process</field>
+            <field name="prefix">ARP</field>
+            <field name="padding">4</field>
+            <field name="company_id" eval="False"/>
+        </record>
+    </data>
+</odoo>

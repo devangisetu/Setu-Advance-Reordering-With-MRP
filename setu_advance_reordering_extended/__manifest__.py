@@ -19,6 +19,7 @@
     ],
     'license': 'OPL-1',
     'data': [
+        'data/ir_sequence.xml',
         'security/ir.model.access.csv',
         'security/setu_advance_reordering_extended_security.xml',
         'db_function/get_products_production_warehouse_group_wise.sql',
