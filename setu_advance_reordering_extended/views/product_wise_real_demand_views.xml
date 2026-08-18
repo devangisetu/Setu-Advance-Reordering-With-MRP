@@ -53,6 +53,9 @@
                     <button name="action_validate" type="object" string="Validate"
                             class="btn-primary"
                             invisible="not component_line_ids or state != 'draft'"/>
+                    <button name="action_recalculate_demand" type="object" string="Re-calculate Demand"
+                            class="btn-primary"
+                            invisible="state != 'inprogress'"/>
                     <button name="action_verify" type="object" string="Verify"
                             class="btn-primary"
                             invisible="state != 'inprogress'"/>
@@ -62,6 +65,11 @@
                     <button name="action_create_reorder_manufacturing_orders" type="object" string="Create MO"
                             class="btn-primary"
                             invisible="state != 'verified' or not has_production_action_summary or production_count > 0"/>
+                    <button name="action_reorder_cancel" type="object" string="Cancel"
+                            confirm="Are you sure want to cancel product-wise reorder ?"
+                            invisible="state in ['verified', 'approved', 'done', 'no_data', 'cancel']"/>
+                    <button name="action_reorder_reset_to_draft" type="object" string="Reset to Draft"
+                            invisible="state != 'cancel'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,inprogress,verified,done,cancel"/>
                 </header>

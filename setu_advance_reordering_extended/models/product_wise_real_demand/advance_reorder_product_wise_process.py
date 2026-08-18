@@ -708,7 +708,10 @@ class AdvanceReorderProductRealDemand(models.Model):
         Company-wise demand generation for all warehouses of this reorder company.
         Lead days come from each product's component line.
         """
+
         self.ensure_one()
+        self.demand_line_ids.unlink()
+        self.summary_ids.unlink()
         vals = []
         warehouses = self._get_company_warehouses()
         product_ids = self.product_id
@@ -731,8 +734,6 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
         vals.extend(self.prepare_reorder_line_vals(warehouses, demand_data, is_mto_route=False))
 
-        self.demand_line_ids.unlink()
-        self.summary_ids.unlink()
         write_vals = {'state': 'no_data'}
         if vals:
             write_vals = {
@@ -754,6 +755,32 @@ class AdvanceReorderProductRealDemand(models.Model):
             if not record.buffer_security_days:
                 raise UserError(_('Please set Coverage days before validating demand.'))
             record.action_reorder_confirm()
+        return True
+
+    def action_recalculate_demand(self):
+        """Recalculate Demand after Validate, same as Reorder with Real Demand."""
+        for record in self:
+            record.action_reorder_confirm()
+        return True
+
+    def action_reorder_cancel(self):
+        """Cancel product-wise demand, same as Reorder with Real Demand."""
+        for record in self:
+            if record.state not in ('done', 'cancel', 'verified'):
+                record.write({'state': 'cancel'})
+        return True
+
+    def action_reorder_reset_to_draft(self):
+        """Reset to Draft and clear generated lines, same as Reorder with Real Demand."""
+        for record in self:
+            record.demand_line_ids.unlink()
+            record.summary_ids.unlink()
+            record.component_line_ids.unlink()
+            record.write({
+                'state': 'draft',
+                'reorder_amount': 0.0,
+                'calculated_lead_days': 0.0,
+            })
         return True
 
     def _filter_supplier_info_by_moq(self, ps_info, total_demand):
