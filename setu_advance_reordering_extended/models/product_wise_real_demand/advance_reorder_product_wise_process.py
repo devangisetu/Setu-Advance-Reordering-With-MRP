@@ -133,8 +133,8 @@ class AdvanceReorderProductRealDemand(models.Model):
         'product_wise_reorder_id',
         string='Summary',
         copy=False,
-        readonly=True,
     )
+    
     purchase_ids = fields.One2many(
         'purchase.order',
         'product_wise_reorder_id',
