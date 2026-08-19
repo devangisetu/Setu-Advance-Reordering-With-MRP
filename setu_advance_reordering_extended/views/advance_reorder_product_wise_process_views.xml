@@ -26,11 +26,6 @@
                 <field name="vendor_id"/>
                 <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
                 <filter string="In Progress" name="inprogress" domain="[('state', '=', 'inprogress')]"/>
-                <separator/>
-                <filter string="History Sales" name="history_sales"
-                        domain="[('generate_demand_with', '=', 'history_sales')]"/>
-                <filter string="Forecast Sales" name="forecast_sales"
-                        domain="[('generate_demand_with', '=', 'forecast_sales')]"/>
                 <group expand="0" string="Group By">
                     <filter string="Product" name="group_product" context="{'group_by': 'product_id'}"/>
                     <filter string="Responsible" name="group_user" context="{'group_by': 'user_id'}"/>
@@ -112,10 +107,10 @@
                         </group>
                         <group string="Reorder for next X days">
                             <field name="buffer_security_days" required="1" readonly="state != 'draft'"/>
-                            <field name="generate_demand_with" required="1" readonly="state != 'draft'"/>
                         </group>
                         <group string="Product Details">
-                            <field name="product_id" required="1" readonly="state != 'draft'" options="{'no_create': True}"/>
+                            <field name="product_id" required="1" readonly="state != 'draft'"
+                                   options="{'no_create': True}"/>
                             <field name="product_tmpl_id" invisible="1"/>
                             <field name="bom_id" options="{'no_create': True}"
                                    readonly="state != 'draft'"
@@ -130,17 +125,9 @@
                                    ]"/>
                         </group>
                         <group string="Choose date to calculate Average sales">
-                            <field name="sales_start_date"
-                                   invisible="generate_demand_with != 'history_sales'"
-                                   required="generate_demand_with == 'history_sales'"
-                                   readonly="state != 'draft'"/>
-                            <field name="sales_end_date"
-                                   invisible="generate_demand_with != 'history_sales'"
-                                   required="generate_demand_with == 'history_sales'"
-                                   readonly="state != 'draft'"/>
-                            <field name="reorder_demand_growth"
-                                   invisible="generate_demand_with != 'history_sales'"
-                                   readonly="state != 'draft'"/>
+                            <field name="sales_start_date" required="1" readonly="state != 'draft'"/>
+                            <field name="sales_end_date" required="1" readonly="state != 'draft'"/>
+                            <field name="reorder_demand_growth" readonly="state != 'draft'"/>
                         </group>
                     </group>
                     <notebook>
@@ -164,8 +151,7 @@
                             <field name="demand_line_ids" readonly="1">
                                 <list create="0" edit="0" delete="0">
                                     <field name="product_id"/>
-                                    <field name="average_daily_sale"
-                                           column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                                    <field name="average_daily_sale"/>
                                     <field name="sales_qty" optional="show"/>
                                     <field name="consumed_qty" optional="show"/>
                                     <field name="available_stock"/>

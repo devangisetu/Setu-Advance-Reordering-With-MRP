@@ -2,10 +2,7 @@
 import logging
 from datetime import datetime
 from statistics import mean
-from types import SimpleNamespace
-
 from dateutil import relativedelta as dateutil_relativedelta
-from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -178,15 +175,6 @@ class AdvanceReorderProductRealDemand(models.Model):
             'Place order for next x days, system will generate demands for next x '
             'days after order transit time'
         ),
-    )
-    generate_demand_with = fields.Selection(
-        [
-            ('history_sales', 'History Sales'),
-            ('forecast_sales', 'Forecast Sales'),
-        ],
-        string='Demand calculation by',
-        help='Demand generate based on past sales or forecasted sales',
-        default='history_sales',
     )
     sales_start_date = fields.Date(string='From date')
     sales_end_date = fields.Date(string='End date')
@@ -382,9 +370,15 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
 
-    def _get_root_component_line(self):
+    def _get_product_lead_days(self, product):
+        """Lead days from the matching component line only."""
         self.ensure_one()
-        return self.component_line_ids.filtered(lambda line: not line.parent_id)[:1]
+        component_line = self.component_line_ids.filtered(
+            lambda line: line.product_id == product
+        )[:1]
+        if component_line:
+            return int(round(component_line.lead_days)) or 1
+        return 1
 
     def _get_company_warehouses(self):
         """All warehouses of the company set on this product-wise reorder."""
@@ -397,38 +391,6 @@ class AdvanceReorderProductRealDemand(models.Model):
                 'No warehouse found for company "%s".'
             ) % self.company_id.display_name)
         return warehouses
-
-    def _get_company_demand_period(self):
-        """Coverage dates for company-wise demand (no warehouse-group config)."""
-        self.ensure_one()
-        reorder_date = fields.Datetime.to_datetime(self.reorder_date).date()
-        root_line = self._get_root_component_line()
-        lead_days = int(round(root_line.lead_days)) or 1 if root_line else 1
-        arrival_offset = lead_days - 1 if lead_days > 0 else lead_days
-        order_arrival_date = reorder_date + relativedelta(days=arrival_offset)
-        coverage_start = order_arrival_date + relativedelta(days=1)
-        buffer_days = self.buffer_security_days
-        coverage_offset = buffer_days - 1 if buffer_days > 0 else buffer_days
-        coverage_end = coverage_start + relativedelta(days=coverage_offset)
-        return SimpleNamespace(
-            order_date=reorder_date,
-            order_arrival_date=order_arrival_date,
-            advance_stock_start_date=coverage_start,
-            advance_stock_end_date=coverage_end,
-        )
-
-    def _get_product_lead_days(self, product):
-        """Lead days for demand from the matching component line."""
-        self.ensure_one()
-        component_line = self.component_line_ids.filtered(
-            lambda line: line.product_id == product
-        )[:1]
-        if component_line:
-            return int(round(component_line.lead_days)) or 1
-        root_line = self._get_root_component_line()
-        if root_line:
-            return int(round(root_line.lead_days)) or 1
-        return 1
 
     def get_history_sales(self, products, warehouses, start_date, end_date):
         """Same as Reorder with Real Demand history sales query."""
@@ -446,34 +408,15 @@ class AdvanceReorderProductRealDemand(models.Model):
         self._cr.execute(query)
         return self._cr.dictfetchall()
 
-    def get_forecast_sales(self, products, warehouses, period):
-        """Same as Reorder with Real Demand forecast sales query."""
-        query = """
-            Select * from get_reorder_forecast_data('%s', '%s', '%s', '%s', '%s', '%s')
-        """ % (
-            str(period.order_date),
-            str(period.order_arrival_date),
-            str(period.advance_stock_start_date),
-            str(period.advance_stock_end_date),
-            products,
-            warehouses,
-        )
-        self._cr.execute(query)
-        return self._cr.dictfetchall()
-
-    def get_sales_data(self, warehouses, line_product_ids, is_sfg=False):
+    def get_sales_data(self, warehouses, line_product_ids,):
         """Company-wise sales data for all warehouses of this reorder company."""
         sales_driven_products = line_product_ids
         products = sales_driven_products and set(sales_driven_products.ids) or {}
         if not products:
             return []
         warehouse_ids = set(warehouses.ids) if warehouses else {}
-        if self.generate_demand_with == 'history_sales':
-            return self.get_history_sales(
-                products, warehouse_ids, self.sales_start_date, self.sales_end_date
-            )
-        return self.get_forecast_sales(
-            products, warehouse_ids, self._get_company_demand_period()
+        return self.get_history_sales(
+            products, warehouse_ids, self.sales_start_date, self.sales_end_date
         )
 
     def get_production_data(self, warehouses, line_product_ids):
@@ -678,13 +621,9 @@ class AdvanceReorderProductRealDemand(models.Model):
             ads = data.get('ads', 0.0)
             lead_days = self._get_product_lead_days(product)
 
-            if self.generate_demand_with == 'history_sales':
-                ads = reorder_demand_growth and ads + (ads * reorder_demand_growth) or ads
-                lead_days_demand = round(ads * lead_days, 2)
-                expected_sales = self.buffer_security_days * ads
-            else:
-                lead_days_demand = data.get('lead_days_demand_stock', 0.0)
-                expected_sales = data.get('expected_sales_stock', 0.0)
+            ads = reorder_demand_growth and ads + (ads * reorder_demand_growth) or ads
+            lead_days_demand = round(ads * lead_days, 2)
+            expected_sales = self.buffer_security_days * ads
 
             transit_demand = lead_days_demand if net_on_hand > lead_days_demand else net_on_hand
             transit_demand = transit_demand if transit_demand > 0.0 else 0.0
@@ -728,7 +667,6 @@ class AdvanceReorderProductRealDemand(models.Model):
         Company-wise demand generation for all warehouses of this reorder company.
         Lead days come from each product's component line.
         """
-
         self.ensure_one()
         self.demand_line_ids.unlink()
         self.summary_ids.unlink()
@@ -744,7 +682,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         production_data = []
         scrap_data = []
         resupply_data = []
-        if self.generate_demand_with == 'history_sales' and line_product_ids:
+        if line_product_ids:
             production_data = self.get_production_data(warehouses, line_product_ids)
             scrap_data = self.get_scrap_data(warehouses, line_product_ids)
             resupply_data = self.get_resupply_data(warehouses, line_product_ids)
@@ -763,23 +701,21 @@ class AdvanceReorderProductRealDemand(models.Model):
         self.write(write_vals)
         return True
 
+    def action_recalculate_demand(self):
+        """Recalculate Demand after Validate, same as Reorder with Real Demand."""
+        for record in self:
+            record.action_reorder_confirm()
+        return True
+
     def action_validate(self):
         """Validate button: calculate demand and move to In Progress."""
         for record in self:
             if not record.component_line_ids:
                 raise UserError(_('Please load components before validating demand.'))
-            if record.generate_demand_with == 'history_sales' and (
-                not record.sales_start_date or not record.sales_end_date
-            ):
+            if not record.sales_start_date or not record.sales_end_date:
                 raise UserError(_('Please set From date and End date before validating demand.'))
             if not record.buffer_security_days:
                 raise UserError(_('Please set Coverage days before validating demand.'))
-            record.action_reorder_confirm()
-        return True
-
-    def action_recalculate_demand(self):
-        """Recalculate Demand after Validate, same as Reorder with Real Demand."""
-        for record in self:
             record.action_reorder_confirm()
         return True
 
