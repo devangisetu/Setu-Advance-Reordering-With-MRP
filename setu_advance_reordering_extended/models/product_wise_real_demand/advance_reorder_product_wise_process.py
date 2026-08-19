@@ -108,12 +108,6 @@ class AdvanceReorderProductRealDemand(models.Model):
         check_company=True,
         domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
     )
-    calculated_lead_days = fields.Float(
-        string='Lead Days',
-        readonly=True,
-        copy=False,
-        help='Recursive critical-path lead time for the selected product.',
-    )
     component_line_ids = fields.One2many(
         'advance.reorder.product.component.line',
         'product_wise_reorder_id',
@@ -315,7 +309,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             'level': level,
             'own_lead_days': own_lead_days,
             'children': [],
-            'calculated_lead_days': own_lead_days,
+            'lead_days': own_lead_days,
         }
         next_visited_products = visited_products | {product.id}
 
@@ -344,14 +338,14 @@ class AdvanceReorderProductRealDemand(models.Model):
 
         max_child_lead_days = max(
             (
-                child['calculated_lead_days']
+                child['lead_days']
                 for child in node['children']
             ),
             default=0.0,
         )
 
         # Update parent lead days after all children are calculated
-        node['calculated_lead_days'] = (
+        node['lead_days'] = (
                 node['own_lead_days'] + max_child_lead_days
         )
 
@@ -364,7 +358,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             'parent_id': parent_line.id if parent_line else False,
             'level': node.get('level', 0),
             'product_id': node['product'].id,
-            'calculated_lead_days': node['calculated_lead_days'],
+            'lead_days': node['lead_days'],
         })
         for child in node['children']:
             self._create_component_tree_lines(child, parent_line=line)
@@ -377,10 +371,18 @@ class AdvanceReorderProductRealDemand(models.Model):
 
             root_node = record._calculate_product_lead_days(record.product_id)
             record._create_component_tree_lines(root_node)
-            record.write({
-                'calculated_lead_days': root_node['calculated_lead_days'],
-            })
+            record._round_component_line_lead_days()
         return True
+
+    def _round_component_line_lead_days(self):
+        """Round lead days on every component line after BOM explosion."""
+        self.ensure_one()
+        for line in self.component_line_ids:
+            line.lead_days = self._rounding_demand_quantity(line.lead_days or 0.0)
+
+    def _get_root_component_line(self):
+        self.ensure_one()
+        return self.component_line_ids.filtered(lambda line: not line.parent_id)[:1]
 
 
     def _get_company_warehouses(self):
@@ -399,7 +401,8 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Coverage dates for company-wise demand (no warehouse-group config)."""
         self.ensure_one()
         reorder_date = fields.Datetime.to_datetime(self.reorder_date).date()
-        lead_days = int(round(self.calculated_lead_days)) or 1
+        root_line = self._get_root_component_line()
+        lead_days = int(round(root_line.lead_days)) or 1 if root_line else 1
         arrival_offset = lead_days - 1 if lead_days > 0 else lead_days
         order_arrival_date = reorder_date + relativedelta(days=arrival_offset)
         coverage_start = order_arrival_date + relativedelta(days=1)
@@ -414,14 +417,17 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _get_product_lead_days(self, product):
-        """Lead days for demand: from this product's component line, else header."""
+        """Lead days for demand from the matching component line."""
         self.ensure_one()
         component_line = self.component_line_ids.filtered(
             lambda line: line.product_id == product
         )[:1]
         if component_line:
-            return int(round(component_line.calculated_lead_days)) or 1
-        return int(round(self.calculated_lead_days)) or 1
+            return int(round(component_line.lead_days)) or 1
+        root_line = self._get_root_component_line()
+        if root_line:
+            return int(round(root_line.lead_days)) or 1
+        return 1
 
     def get_history_sales(self, products, warehouses, start_date, end_date):
         """Same as Reorder with Real Demand history sales query."""
@@ -790,7 +796,6 @@ class AdvanceReorderProductRealDemand(models.Model):
             record.write({
                 'state': 'draft',
                 'reorder_amount': 0.0,
-                'calculated_lead_days': 0.0,
             })
         return True
 
