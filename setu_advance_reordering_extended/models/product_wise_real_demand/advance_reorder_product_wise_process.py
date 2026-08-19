@@ -100,7 +100,6 @@ class AdvanceReorderProductRealDemand(models.Model):
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
-        copy=False,
         tracking=True,
         check_company=True,
         domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
@@ -186,12 +185,12 @@ class AdvanceReorderProductRealDemand(models.Model):
     @api.onchange('product_id', 'company_id')
     def _onchange_product_id(self):
         for record in self:
-            if record.bom_id or not record.product_id:
+            record.bom_id = False
+            if not record.product_id:
                 continue
-            record.bom_id = (
-                record.product_id.with_company(record.company_id).reorder_bom_id
-                or record.product_id.get_default_bom(company_id=record.company_id.id)
-            )
+            bom_id = record._get_product_bom(record.product_id)
+            if bom_id:
+                record.bom_id = bom_id.id
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
@@ -669,7 +668,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         self.summary_ids.unlink()
         vals = []
         warehouses = self._get_company_warehouses()
-        product_ids = self.product_id
+        product_ids = self.component_line_ids.product_id
 
         line_product_ids = product_ids.filtered(lambda product: not product.is_kit_product)
         kit_product_ids = product_ids.filtered(lambda product: product.is_kit_product)
@@ -798,6 +797,14 @@ class AdvanceReorderProductRealDemand(models.Model):
                 price = ps_info.price
         return vendor_moq, purchase_qty, price
 
+    def _is_mto_buy_or_manufacture_product(self, product):
+        """True when product has MTO with Buy and/or Manufacture routes."""
+        route_names = set(product.route_ids.mapped('name'))
+        return (
+                {'Buy', 'Replenish on Order (MTO)'} <= route_names
+                or {'Manufacture', 'Replenish on Order (MTO)'} <= route_names
+        )
+
     def _get_order_action(self, product):
         """Same action selection as Reorder with Real Demand."""
         route_names = set(product.route_ids.mapped('name'))
@@ -853,6 +860,10 @@ class AdvanceReorderProductRealDemand(models.Model):
                 lambda demand_line: demand_line.product_id.id == line.product_id.id
             )
             demanded_qty = sum(product_lines.mapped('demand_adjustment_qty'))
+
+            if self._is_mto_buy_or_manufacture_product(line.product_id):
+                demanded_qty = line.sales_qty
+
             if demanded_qty <= 0:
                 continue
 
