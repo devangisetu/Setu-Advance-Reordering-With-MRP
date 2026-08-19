@@ -18,6 +18,7 @@ class AdvanceReorderProductRealDemandCalcLine(models.Model):
     average_daily_sale = fields.Float(string='ADS', help='Average daily sales')
     available_stock = fields.Float(string='Free qty')
     incoming_qty = fields.Float(string='Incoming')
+    stock_move_ids = fields.Many2many('stock.move', string='Stock Move')
     transit_time_sales = fields.Float(string='Transit sales')
     stock_after_transit = fields.Float(string='Stock after transit')
     expected_sales = fields.Float(string='Coverage days sales')
@@ -29,3 +30,11 @@ class AdvanceReorderProductRealDemandCalcLine(models.Model):
     scrap_qty = fields.Float(string='Scrap Qty')
     demanded_qty = fields.Float(string='Demand')
     demand_adjustment_qty = fields.Integer(string='To be ordered')
+
+    def action_incoming_qty_stock_move(self):
+        """Open incoming stock moves for this demand line product."""
+        action = self.env['ir.actions.actions']._for_xml_id(
+            'setu_advance_reordering.actions_advance_reorder_stock_move'
+        )
+        action['domain'] = [('id', 'in', self.stock_move_ids.ids)]
+        return action

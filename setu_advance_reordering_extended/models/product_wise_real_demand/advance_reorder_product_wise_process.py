@@ -103,7 +103,8 @@ class AdvanceReorderProductRealDemand(models.Model):
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
-        copy=False,
+        compute='_compute_bom_id',
+        store=True,
         tracking=True,
         check_company=True,
         domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
@@ -195,10 +196,14 @@ class AdvanceReorderProductRealDemand(models.Model):
         help='Add percentage value if you want to calculate demand with growth',
     )
 
-    @api.onchange('product_id', 'company_id')
-    def _onchange_product_id(self):
+    @api.depends('product_id', 'company_id')
+    def _compute_bom_id(self):
         for record in self:
-            record.bom_id = record._get_product_bom(record.product_id) if record.product_id else False
+            record.bom_id = (
+                record._get_product_bom(record.product_id)
+                if record.product_id
+                else False
+            )
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
@@ -291,13 +296,12 @@ class AdvanceReorderProductRealDemand(models.Model):
             'semi_finished_good',
         )
 
+        if level == 0 and is_manufactured and not self.bom_id:
+            raise ValidationError(_('Please select BOM first.'))
+
         if is_manufactured:
             bom = self._get_product_bom(product)
-            if not bom:
-                raise ValidationError(_(
-                    'Please select a BOM, or configure a company BOM for "%s".'
-                ) % product.display_name)
-            own_lead_days = bom.produce_delay or 0.0
+            own_lead_days = bom.produce_dselay or 0.0
         else:
             bom = False
             own_lead_days = self._get_purchase_lead_days(product)
@@ -655,10 +659,12 @@ class AdvanceReorderProductRealDemand(models.Model):
     def _prepare_base_line_vals(self, warehouses, product):
         """Prepare base demand line values for one product, company-wise."""
         wh_summary = self._get_warehouse_qty_summary(product, warehouses)
+        moves = self.get_stock_move(product, warehouses)
         return {
             'product_id': product.id,
             'available_stock': wh_summary['available'],
             'incoming_qty': wh_summary['incoming'],
+            'stock_move_ids': [(6, 0, moves)],
         }
 
     def prepare_reorder_line_vals(self, warehouses, demand_data, is_mto_route=False):
