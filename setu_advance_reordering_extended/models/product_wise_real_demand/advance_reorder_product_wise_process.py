@@ -392,32 +392,29 @@ class AdvanceReorderProductRealDemand(models.Model):
             ) % self.company_id.display_name)
         return warehouses
 
-    def get_history_sales(self, products, warehouses, start_date, end_date):
-        """Same as Reorder with Real Demand history sales query."""
-        start_date = start_date.strftime('%Y-%m-%d')
-        end_date = end_date and end_date.strftime('%Y-%m-%d')
-        query = """
-            Select product_id, product_name,
-                sum(sales) as sales,
-                sum(sales_return) as sales_return,
-                sum(total_sales) as total_sales,
-                sum(ads) as ads
-            from get_products_sales_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
-            group by product_id, product_name
-        """ % ('{}', products, '{}', warehouses, start_date, end_date)
-        self._cr.execute(query)
-        return self._cr.dictfetchall()
 
     def get_sales_data(self, warehouses, line_product_ids,):
         """Company-wise sales data for all warehouses of this reorder company."""
+        if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
+            return []
         sales_driven_products = line_product_ids
         products = sales_driven_products and set(sales_driven_products.ids) or {}
         if not products:
             return []
-        warehouse_ids = set(warehouses.ids) if warehouses else {}
-        return self.get_history_sales(
-            products, warehouse_ids, self.sales_start_date, self.sales_end_date
-        )
+        warehouse_ids = set(warehouses.ids or [])
+        start_date = self.sales_start_date.strftime('%Y-%m-%d')
+        end_date = self.sales_end_date.strftime('%Y-%m-%d')
+        query = """
+                    Select product_id, product_name,
+                        sum(sales) as sales,
+                        sum(sales_return) as sales_return,
+                        sum(total_sales) as total_sales,
+                        sum(ads) as ads
+                    from get_products_sales_warehouse_group_wise('%s', '%s', '%s', '%s', '%s', '%s')
+                    group by product_id, product_name
+                """ % ('{}', products, '{}', warehouse_ids, start_date, end_date)
+        self._cr.execute(query)
+        return self._cr.dictfetchall()
 
     def get_production_data(self, warehouses, line_product_ids):
         """Company-wise production data for all warehouses of this reorder company."""
@@ -679,13 +676,9 @@ class AdvanceReorderProductRealDemand(models.Model):
         line_product_ids |= self._get_kit_component(kit_product_ids)
 
         sales_data = self.get_sales_data(warehouses, line_product_ids)
-        production_data = []
-        scrap_data = []
-        resupply_data = []
-        if line_product_ids:
-            production_data = self.get_production_data(warehouses, line_product_ids)
-            scrap_data = self.get_scrap_data(warehouses, line_product_ids)
-            resupply_data = self.get_resupply_data(warehouses, line_product_ids)
+        production_data = self.get_production_data(warehouses, line_product_ids)
+        scrap_data = self.get_scrap_data(warehouses, line_product_ids)
+        resupply_data = self.get_resupply_data(warehouses, line_product_ids)
 
         demand_data = self._merge_ads_data(
             sales_data, production_data, resupply_data, scrap_data
