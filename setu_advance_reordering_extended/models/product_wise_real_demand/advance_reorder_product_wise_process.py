@@ -124,7 +124,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Summary',
         copy=False,
     )
-    
+
     purchase_ids = fields.One2many(
         'purchase.order',
         'product_wise_reorder_id',
@@ -222,16 +222,15 @@ class AdvanceReorderProductRealDemand(models.Model):
                 ) or _('New')
         return super().create(vals_list)
 
-
     def _get_product_bom(self, product):
         """Return header BOM for the main product, otherwise company-wise BOM."""
         self.ensure_one()
         if product == self.product_id and self.bom_id:
             return self.bom_id
         return (
-            product.with_company(self.company_id).reorder_bom_id
-            or product.get_default_bom(company_id=self.company_id.id)
-            or self.env['mrp.bom']
+                product.with_company(self.company_id).reorder_bom_id
+                or product.get_default_bom(company_id=self.company_id.id)
+                or self.env['mrp.bom']
         )
 
     def _get_purchase_lead_days(self, product):
@@ -352,12 +351,11 @@ class AdvanceReorderProductRealDemand(models.Model):
             'actual_lead_days': node.get('lead_days') or 0.0,
             'lead_days': round(node.get('lead_days') or 0.0, 0),
             'manufacture_lead_days': (
-                node['bom'].produce_delay or 0.0
+                    node['bom'].produce_delay or 0.0
             ) if node.get('bom') else 0.0,
         })
         for child in node['children']:
             self._create_component_tree_lines(child, parent_line=line)
-
 
     def action_load_components(self):
         for record in self:
@@ -367,7 +365,6 @@ class AdvanceReorderProductRealDemand(models.Model):
             root_node = record._calculate_product_lead_days(record.product_id)
             record._create_component_tree_lines(root_node)
         return True
-
 
     def _get_product_lead_days(self, product):
         """Lead days from the matching component line only."""
@@ -391,8 +388,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             ) % self.company_id.display_name)
         return warehouses
 
-
-    def get_sales_data(self, warehouses, line_product_ids,):
+    def get_sales_data(self, warehouses, line_product_ids, ):
         """Company-wise sales data for all warehouses of this reorder company."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
@@ -507,10 +503,10 @@ class AdvanceReorderProductRealDemand(models.Model):
         resupply_map = {row['product_id']: row for row in resupply_data}
         scrap_map = {row['product_id']: row for row in scrap_data}
         product_ids = (
-            set(sales_map)
-            | set(production_map)
-            | set(resupply_map)
-            | set(scrap_map)
+                set(sales_map)
+                | set(production_map)
+                | set(resupply_map)
+                | set(scrap_map)
         )
 
         merged = []
@@ -532,10 +528,10 @@ class AdvanceReorderProductRealDemand(models.Model):
             merged.append({
                 'product_id': product_id,
                 'product_name': (
-                    sales.get('product_name')
-                    or production.get('product_name')
-                    or resupply.get('product_name')
-                    or scrap.get('product_name')
+                        sales.get('product_name')
+                        or production.get('product_name')
+                        or resupply.get('product_name')
+                        or scrap.get('product_name')
                 ),
                 'sales_qty': sales.get('sales', 0.0),
                 'sales_return': sales.get('sales_return', 0.0),
@@ -607,7 +603,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Company-wise demand using each product's component-line lead days."""
         vals = []
         reorder_demand_growth = (
-            self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
+                self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
         )
 
         for data in demand_data:
@@ -765,7 +761,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if company_id:
             ps_info = product.seller_ids.filtered(
                 lambda info: info.partner_id == partner and (
-                    info.company_id == company_id or not info.company_id
+                        info.company_id == company_id or not info.company_id
                 )
             )
         else:
@@ -852,24 +848,29 @@ class AdvanceReorderProductRealDemand(models.Model):
         summary_vals = []
         reorder_total_amount = 0.0
         for line in self.demand_line_ids:
+            product = line.product_id
             summary_by_product = self._get_summary_vals_by_product(summary_vals)
-            if not line.product_id or line.product_id.id in summary_by_product:
+            if not product or product.id in summary_by_product:
                 continue
 
             product_lines = self.demand_line_ids.filtered(
-                lambda demand_line: demand_line.product_id.id == line.product_id.id
+                lambda demand_line: demand_line.product_id.id == product.id
             )
             demanded_qty = sum(product_lines.mapped('demand_adjustment_qty'))
 
-            if self._is_mto_buy_or_manufacture_product(line.product_id):
-                demanded_qty = line.sales_qty
+            if product.reorder_product_classification == "semi_finished_good" and self._is_mto_buy_or_manufacture_product(
+                    product):
+                warehouses = self._get_company_warehouses()
+                sales_data = self.get_sales_data(warehouses, product)
+                demanded_qty = self.prepare_reorder_line_vals(warehouses, sales_data,
+                                                              is_mto_route=True) if sales_data else 0.0
 
             if demanded_qty <= 0:
                 continue
 
-            order_action = self._get_order_action(line.product_id)
+            order_action = self._get_order_action(product)
             line_vals = self._prepare_net_demand_summary_line_vals(
-                product=line.product_id,
+                product=product,
                 order_qty=demanded_qty,
                 demanded_qty=demanded_qty,
                 order_action=order_action,
@@ -877,7 +878,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             )
             if order_action == 'purchase':
                 _vendor_moq, _purchase_qty, price = self._get_purchase_details(
-                    line.product_id, self.company_id, demanded_qty, demanded_qty
+                    product, self.company_id, demanded_qty, demanded_qty
                 )
                 reorder_total_amount += round(demanded_qty) * (price or 0.0)
             else:
@@ -957,9 +958,9 @@ class AdvanceReorderProductRealDemand(models.Model):
             if company_id:
                 ps_info = product_id.seller_ids.filtered(
                     lambda seller, pid=partner.id, cid=company_id: (
-                        seller.partner_id.id == pid
-                        and seller.company_id == cid
-                        and seller.currency_id == cid.currency_id
+                            seller.partner_id.id == pid
+                            and seller.company_id == cid
+                            and seller.currency_id == cid.currency_id
                     )
                 )
             else:
@@ -1148,9 +1149,9 @@ class AdvanceReorderProductRealDemand(models.Model):
                 lambda summary, products=product_list: summary.product_id.id in products
             )
             if (
-                self.vendor_selection_strategy == 'specific_vendor'
-                and partner.vendor_rule in ['both', 'minimum_order_value']
-                and self.reorder_amount < self.minimum_reorder_amount
+                    self.vendor_selection_strategy == 'specific_vendor'
+                    and partner.vendor_rule in ['both', 'minimum_order_value']
+                    and self.reorder_amount < self.minimum_reorder_amount
             ):
                 raise UserError(_(
                     "Can not create purchase order because reorder doesn't fulfil "

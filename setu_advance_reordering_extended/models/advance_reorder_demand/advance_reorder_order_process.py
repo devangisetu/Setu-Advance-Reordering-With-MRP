@@ -1052,16 +1052,14 @@ class AdvanceReorderOrderProcess(models.Model):
             if (not product or product.id in summary_by_product):
                 continue
 
+            order_qty = round(tab_line.demand_adjustment_qty)
+
             # MTO + Buy/Manufacture: summary demand from own sales qty only.
             if product.reorder_product_classification == "semi_finished_good" and self._is_mto_buy_or_manufacture_product(
                     product):
                 sales_data = self.get_sales_data(tab_line.config_id, product, is_sfg=True)
-                mto_sales_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data,
+                order_qty = self.prepare_reorder_line_vals(tab_line.config_id, sales_data,
                                                                is_mto_route=True, ) if sales_data else 0.0
-                if mto_sales_qty <= 0:
-                    continue
-
-            order_qty = round(tab_line.demand_adjustment_qty)
             if order_qty <= 0:
                 continue
 
