@@ -33,7 +33,12 @@ class AdvanceReorderProductComponentLine(models.Model):
         string='Product',
         compute='_compute_product_display',
     )
+    actual_lead_days = fields.Float(string='Actual Lead Days',)
     lead_days = fields.Float(string='Lead Days')
+    manufacture_lead_days = fields.Float(
+        string='Manufacture Lead Days',
+        help='Manufacturing lead days from the selected BOM produce delay.',
+    )
 
     @api.depends('product_id', 'product_id.display_name', 'level', 'parent_id')
     def _compute_product_display(self):

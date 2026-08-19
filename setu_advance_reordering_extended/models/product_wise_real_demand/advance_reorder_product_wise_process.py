@@ -103,8 +103,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
-        compute='_compute_bom_id',
-        store=True,
+        copy=False,
         tracking=True,
         check_company=True,
         domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
@@ -196,13 +195,14 @@ class AdvanceReorderProductRealDemand(models.Model):
         help='Add percentage value if you want to calculate demand with growth',
     )
 
-    @api.depends('product_id', 'company_id')
-    def _compute_bom_id(self):
+    @api.onchange('product_id', 'company_id')
+    def _onchange_product_id(self):
         for record in self:
+            if record.bom_id or not record.product_id:
+                continue
             record.bom_id = (
-                record._get_product_bom(record.product_id)
-                if record.product_id
-                else False
+                record.product_id.with_company(record.company_id).reorder_bom_id
+                or record.product_id.get_default_bom(company_id=record.company_id.id)
             )
 
     @api.onchange('vendor_selection_strategy')
@@ -301,7 +301,7 @@ class AdvanceReorderProductRealDemand(models.Model):
 
         if is_manufactured:
             bom = self._get_product_bom(product)
-            own_lead_days = bom.produce_dselay or 0.0
+            own_lead_days = bom.produce_delay or 0.0
         else:
             bom = False
             own_lead_days = self._get_purchase_lead_days(product)
@@ -362,11 +362,15 @@ class AdvanceReorderProductRealDemand(models.Model):
             'parent_id': parent_line.id if parent_line else False,
             'level': node.get('level', 0),
             'product_id': node['product'].id,
-            'lead_days': node['lead_days'],
+            'actual_lead_days': node.get('lead_days') or 0.0,
+            'lead_days': round(node.get('lead_days') or 0.0, 0),
+            'manufacture_lead_days': (
+                node['bom'].produce_delay or 0.0
+            ) if node.get('bom') else 0.0,
         })
         for child in node['children']:
             self._create_component_tree_lines(child, parent_line=line)
-        return line
+
 
     def action_load_components(self):
         for record in self:
@@ -375,19 +379,12 @@ class AdvanceReorderProductRealDemand(models.Model):
 
             root_node = record._calculate_product_lead_days(record.product_id)
             record._create_component_tree_lines(root_node)
-            record._round_component_line_lead_days()
         return True
 
-    def _round_component_line_lead_days(self):
-        """Round lead days on every component line after BOM explosion."""
-        self.ensure_one()
-        for line in self.component_line_ids:
-            line.lead_days = self._rounding_demand_quantity(line.lead_days or 0.0)
 
     def _get_root_component_line(self):
         self.ensure_one()
         return self.component_line_ids.filtered(lambda line: not line.parent_id)[:1]
-
 
     def _get_company_warehouses(self):
         """All warehouses of the company set on this product-wise reorder."""
@@ -971,12 +968,6 @@ class AdvanceReorderProductRealDemand(models.Model):
     # -------------------------------------------------------------------------
     # Purchase / Manufacturing order generation (same as Reorder with Real Demand)
     # -------------------------------------------------------------------------
-
-    def _get_default_warehouse(self):
-        """Default warehouse of the company set on this product-wise reorder."""
-        self.ensure_one()
-        warehouses = self._get_company_warehouses()
-        return warehouses[:1]
 
     def _get_date_planned(self, partner_id, product_id, product_qty, start_date):
         """Same planned date calculation as Reorder with Real Demand."""

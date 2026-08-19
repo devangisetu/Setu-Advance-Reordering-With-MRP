@@ -153,6 +153,8 @@
                                     <field name="parent_path" column_invisible="1"/>
                                     <field name="product_id" column_invisible="1"/>
                                     <field name="product_display" string="Product"/>
+                                    <field name="manufacture_lead_days"/>
+                                    <field name="actual_lead_days" optional="hide"/>
                                     <field name="lead_days" string="Lead Days"/>
                                 </list>
                             </field>
