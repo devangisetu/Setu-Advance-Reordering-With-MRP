@@ -114,8 +114,9 @@
                             <field name="product_id" required="1" readonly="state != 'draft'"
                                    options="{'no_create': True}"/>
                             <field name="product_tmpl_id" invisible="1"/>
+                            <field name="reorder_product_classification" invisible="1"/>
                             <field name="bom_id" options="{'no_create': True}"
-                                   readonly="state != 'draft'"
+                                   readonly="reorder_product_classification in ('raw_material', 'other') or state != 'draft'"
                                    domain="[
                                        '&amp;',
                                        '|',

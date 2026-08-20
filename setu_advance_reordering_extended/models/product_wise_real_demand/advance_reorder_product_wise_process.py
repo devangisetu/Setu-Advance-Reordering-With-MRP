@@ -97,6 +97,8 @@ class AdvanceReorderProductRealDemand(models.Model):
         related='product_id.product_tmpl_id',
         store=True,
     )
+    reorder_product_classification = fields.Selection(related="product_id.reorder_product_classification",
+                                                      string="Reorder Classification", store=True)
     bom_id = fields.Many2one(
         'mrp.bom',
         string='BOM',
