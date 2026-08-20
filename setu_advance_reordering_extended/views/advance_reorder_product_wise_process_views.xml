@@ -154,6 +154,7 @@
                                     <field name="product_id"/>
                                     <field name="average_daily_sale"/>
                                     <field name="sales_qty" optional="show"/>
+                                    <field name="sales_return_qty" optional="hide"/>
                                     <field name="consumed_qty" optional="show"/>
                                     <field name="available_stock"/>
                                     <field name="incoming_qty" readonly="1" force_save="1"/>
@@ -162,6 +163,9 @@
                                             type="object"
                                             icon="fa-exchange"
                                             title="Incoming Stock Moves"/>
+                                    <field name="resupply_qty" optional="show"/>
+                                    <field name="resupply_return_qty" optional="hide"/>
+                                    <field name="scrap_qty" optional="show"/>
                                     <field name="transit_time_sales"/>
                                     <field name="stock_after_transit"/>
                                     <field name="expected_sales"/>
