@@ -54,8 +54,6 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         for rec in records:
             if rec.product_wise_reorder_id:
                 rec.company_id = rec.product_wise_reorder_id.company_id
-                if not rec.warehouse_id:
-                    rec.warehouse_id = rec.product_wise_reorder_id._get_default_warehouse()
                 purchase_summaries = rec.product_wise_reorder_id.summary_ids.filtered(
                     lambda summary: summary.order_action == 'purchase'
                 )
