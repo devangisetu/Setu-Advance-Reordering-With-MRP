@@ -257,7 +257,7 @@ class AdvanceReorderProductRealDemand(models.Model):
                         min(receipt_dates).date() - approve_date.date()
                 ).days
 
-                if delay >= 0:
+                if delay > 0:
                     lead_days.append(delay)
 
         return mean(lead_days) if lead_days else 0.0
