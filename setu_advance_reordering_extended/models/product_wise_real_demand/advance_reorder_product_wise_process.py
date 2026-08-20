@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from statistics import mean
-from dateutil import relativedelta as dateutil_relativedelta
+from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -236,29 +236,33 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _get_purchase_lead_days(self, product):
+        """
+        Calculate raw material lead days from purchase order moves.
+        """
         self.ensure_one()
-
-        purchase_lines = self.env['purchase.order.line'].search([
-            ('product_id', '=', product.id),
-            ('order_id.state', 'in', ('purchase', 'done')),
-            ('order_id.company_id', '=', self.company_id.id),
-        ])
-
         lead_days = []
+        move_domain = [
+            ('product_id', '=', product.id),
+            ('state', '=', 'done'),
+            ('purchase_line_id', '!=', False),
+            ('company_id', '=', self.company_id.id),
+        ]
+        start_dt = fields.Datetime.to_datetime(self.sales_start_date)
+        move_domain.append(('date', '>=', start_dt))
+        end_dt = fields.Datetime.to_datetime(self.sales_end_date) + relativedelta(days=1)
+        move_domain.append(('date', '<', end_dt))
 
-        for purchase_line in purchase_lines:
-            if purchase_line.move_ids.picking_id.state != 'done':
+        done_moves = self.env['stock.move'].search(move_domain)
+        for move in done_moves:
+            purchase_line = move.purchase_line_id
+            purchase_order = purchase_line.order_id
+            approve_date = purchase_order.date_approve
+            receipt_date = move.picking_id.date_done or move.date
+            if not receipt_date or not approve_date:
                 continue
-            receipt_dates = purchase_line.move_ids.picking_id.mapped('date_done')
-            approve_date = purchase_line.order_id.date_approve
-
-            if receipt_dates and approve_date:
-                delay = (
-                        min(receipt_dates).date() - approve_date.date()
-                ).days
-
-                if delay > 0:
-                    lead_days.append(delay)
+            delay = (receipt_date.date() - approve_date.date()).days
+            if delay > 0:
+                lead_days.append(delay)
 
         return mean(lead_days) if lead_days else 0.0
 
@@ -692,7 +696,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_recalculate_demand(self):
-        """Recalculate Demand after Validate, same as Reorder with Real Demand."""
+        """Recalculate Demand after Validate."""
         for record in self:
             record.action_reorder_confirm()
         return True
@@ -710,14 +714,14 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_reorder_cancel(self):
-        """Cancel product-wise demand, same as Reorder with Real Demand."""
+        """Cancel product-wise demand."""
         for record in self:
             if record.state not in ('done', 'cancel', 'verified'):
                 record.write({'state': 'cancel'})
         return True
 
     def action_reorder_reset_to_draft(self):
-        """Reset to Draft and clear generated lines, same as Reorder with Real Demand."""
+        """Reset to Draft and clear generated lines."""
         for record in self:
             record.demand_line_ids.unlink()
             record.summary_ids.unlink()
@@ -845,7 +849,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def prepare_reorder_summary_vals(self):
-        """Create summary lines from demand lines, same as Reorder with Real Demand verify."""
+        """Create summary lines from demand lines."""
         self.ensure_one()
         summary_vals = []
         reorder_total_amount = 0.0
@@ -908,9 +912,9 @@ class AdvanceReorderProductRealDemand(models.Model):
             record.write(write_vals)
         return True
 
-    # -------------------------------------------------------------------------
-    # Purchase / Manufacturing order generation (same as Reorder with Real Demand)
-    # -------------------------------------------------------------------------
+    # ------------------------------------------
+    # Purchase / Manufacturing order generation
+    # -----------------------------------------
 
     def _get_date_planned(self, partner_id, product_id, product_qty, start_date):
         """Same planned date calculation as Reorder with Real Demand."""
@@ -921,7 +925,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             date=fields.Date.context_today(self, start_date),
             uom_id=product_id.uom_po_id,
         ).delay or 0.0
-        date_planned = start_date + dateutil_relativedelta.relativedelta(days=days)
+        date_planned = start_date + relativedelta(days=days)
         return date_planned.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
 
     def _prepare_purchase_order_line_vals(self, fpos, partner=None, summary_lines=None):
