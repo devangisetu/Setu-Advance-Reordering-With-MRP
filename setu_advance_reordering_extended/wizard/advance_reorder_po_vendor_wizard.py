@@ -38,6 +38,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         'reorder_process_id',
     )
     def _compute_show_vendor_selection(self):
+        """Show vendor fields based on product-wise strategy."""
         for rec in self:
             if rec.product_wise_reorder_id:
                 rec.show_vendor_selection = rec.product_wise_reorder_id.vendor_selection_strategy in (
@@ -49,7 +50,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Preloads purchase demand lines for purchase order generation."""
+        """Create wizard and preload purchase summary lines."""
         records = super().create(vals_list)
         for rec in records:
             if rec.product_wise_reorder_id:
@@ -82,12 +83,14 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         return records
 
     def action_confirm(self):
+        """Confirm wizard and create purchase orders."""
         self.ensure_one()
         if self.product_wise_reorder_id:
             return self._action_confirm_product_wise()
         return super().action_confirm()
 
     def _action_confirm_product_wise(self):
+        """Create POs from product-wise summaries and selected warehouse."""
         self.ensure_one()
         if not self.warehouse_id:
             raise UserError(_('Please select a warehouse to create purchase orders.'))
@@ -172,12 +175,14 @@ class AdvanceReorderPoVendorWizardLine(models.TransientModel):
         'product_wise_summary_line_id.demanded_qty',
     )
     def _compute_line_summary_fields(self):
+        """Set product and demand from linked summary line."""
         for line in self:
             summary = line.product_wise_summary_line_id or line.summary_line_id
             line.product_id = summary.product_id if summary else False
             line.demanded_qty = summary.demanded_qty if summary else 0
 
     def _get_supplier_info_for_vendor(self, product, vendor, demand_qty):
+        """Get supplier pricelist for vendor and demand qty."""
         self.ensure_one()
         if self.wizard_id.product_wise_reorder_id:
             if not product or not vendor:
@@ -207,6 +212,7 @@ class AdvanceReorderPoVendorWizardLine(models.TransientModel):
         'product_wise_summary_line_id.to_be_ordered_in_purchase_uom',
     )
     def _compute_vendor_related_fields(self):
+        """Compute vendor MOQ and purchase UoM order qty."""
         product_wise_lines = self.filtered('product_wise_summary_line_id')
         for line in product_wise_lines:
             summary = line.product_wise_summary_line_id
@@ -243,6 +249,7 @@ class AdvanceReorderPoVendorWizardLine(models.TransientModel):
             super(AdvanceReorderPoVendorWizardLine, remaining)._compute_vendor_related_fields()
 
     def _sync_summary_vendor_moq(self):
+        """Sync vendor MOQ and purchase UoM qty back to summary."""
         for line in self:
             if not line.product_wise_summary_line_id:
                 continue

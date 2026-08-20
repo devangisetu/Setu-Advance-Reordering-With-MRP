@@ -44,5 +44,6 @@ class AdvanceReorderProductRealDemandSummary(models.Model):
 
     @api.depends('vendor_moq', 'demanded_qty')
     def _compute_is_order_moq(self):
+        """True when vendor MOQ is greater than demand."""
         for record in self:
             record.is_order_moq = record.vendor_moq > record.demanded_qty

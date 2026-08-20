@@ -32,7 +32,7 @@ class AdvanceReorderProductRealDemandCalcLine(models.Model):
     demand_adjustment_qty = fields.Integer(string='To be ordered')
 
     def action_incoming_qty_stock_move(self):
-        """Open incoming stock moves for this demand line product."""
+        """Open incoming stock moves for this demand line."""
         action = self.env['ir.actions.actions']._for_xml_id(
             'setu_advance_reordering.actions_advance_reorder_stock_move'
         )

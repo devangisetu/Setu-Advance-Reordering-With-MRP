@@ -42,6 +42,7 @@ class AdvanceReorderProductComponentLine(models.Model):
 
     @api.depends('product_id', 'product_id.display_name', 'level', 'parent_id')
     def _compute_product_display(self):
+        """Indent product name by BOM hierarchy level."""
         for line in self:
             name = line.product_id.display_name or ''
             level = line.level or 0

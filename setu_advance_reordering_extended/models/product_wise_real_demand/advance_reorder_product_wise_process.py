@@ -103,6 +103,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         'mrp.bom',
         string='BOM',
         tracking=True,
+        copy=False,
         check_company=True,
         domain="[('type', 'in', ('normal', 'phantom', 'subcontract')), '|', ('company_id', '=', company_id), ('company_id', '=', False), '|', ('product_id', '=', product_id), '&', ('product_id', '=', False), ('product_tmpl_id', '=', product_tmpl_id)]",
     )
@@ -186,6 +187,7 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     @api.onchange('product_id', 'company_id')
     def _onchange_product_id(self):
+        """Set default BOM when product or company changes."""
         for record in self:
             record.bom_id = False
             if not record.product_id:
@@ -196,20 +198,24 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     @api.onchange('vendor_selection_strategy')
     def _onchange_vendor_selection_strategy(self):
+        """Clear vendor when strategy is not specific vendor."""
         for record in self:
             if record.vendor_selection_strategy != 'specific_vendor':
                 record.vendor_id = False
 
     def _compute_purchase_count(self):
+        """Count linked purchase orders."""
         for record in self:
             record.purchase_count = len(record.purchase_ids)
 
     def _compute_production_count(self):
+        """Count linked manufacturing orders."""
         for record in self:
             record.production_count = len(record.production_ids)
 
     @api.depends('summary_ids', 'summary_ids.order_action')
     def _compute_summary_action_flags(self):
+        """Flag whether summary has purchase or production actions."""
         for record in self:
             actions = set(record.summary_ids.mapped('order_action'))
             record.has_purchase_action_summary = 'purchase' in actions
@@ -217,6 +223,7 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Assign sequence number on create."""
         for vals in vals_list:
             if vals.get('name', _('New')) == _('New'):
                 vals['name'] = self.env['ir.sequence'].next_by_code(
@@ -225,7 +232,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return super().create(vals_list)
 
     def _get_product_bom(self, product):
-        """Return header BOM for the main product, otherwise company-wise BOM."""
+        """Return BOM for product from header or product defaults."""
         self.ensure_one()
         if product == self.product_id and self.bom_id:
             return self.bom_id
@@ -236,9 +243,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _get_purchase_lead_days(self, product):
-        """
-        Calculate raw material lead days from purchase order moves.
-        """
+        """Average purchase lead days from done receipt moves."""
         self.ensure_one()
         lead_days = []
         move_domain = [
@@ -273,7 +278,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             level=0,
             visited_products=None,
     ):
-        """Calculate product lead days and prepare its BOM node."""
+        """Build BOM tree node with own and total lead days."""
         self.ensure_one()
 
         visited_products = set(visited_products or set())
@@ -318,7 +323,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return node
 
     def _calculate_child_lead_days(self, node, visited_products):
-        """Calculate all child lead days and update parent lead days."""
+        """Add child BOM lead days and update parent total."""
         bom = node['bom']
         for bom_line in bom.bom_line_ids:
             component = bom_line.product_id
@@ -346,7 +351,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _create_component_tree_lines(self, node, parent_line=False):
-        """Create hierarchical component lines (parent → children)."""
+        """Create parent-child component lines from BOM tree."""
         self.ensure_one()
         ComponentLine = self.env['advance.reorder.product.component.line']
         line = ComponentLine.create({
@@ -364,6 +369,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             self._create_component_tree_lines(child, parent_line=line)
 
     def action_load_components(self):
+        """Load BOM components and compute lead days."""
         for record in self:
             if not record.product_id:
                 raise UserError(_('Please select a product before loading components.'))
@@ -373,7 +379,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def _get_product_lead_days(self, product):
-        """Lead days from the matching component line only."""
+        """Return lead days from matching component line."""
         self.ensure_one()
         component_line = self.component_line_ids.filtered(
             lambda line: line.product_id == product
@@ -383,7 +389,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return 1
 
     def _get_company_warehouses(self):
-        """All warehouses of the company set on this product-wise reorder."""
+        """Return all warehouses for the reorder company."""
         self.ensure_one()
         warehouses = self.env['stock.warehouse'].search([
             ('company_id', '=', self.company_id.id),
@@ -395,7 +401,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return warehouses
 
     def get_sales_data(self, warehouses, line_product_ids, ):
-        """Company-wise sales data for all warehouses of this reorder company."""
+        """Fetch sales ADS data for products and warehouses."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
         sales_driven_products = line_product_ids
@@ -418,7 +424,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return self._cr.dictfetchall()
 
     def get_production_data(self, warehouses, line_product_ids):
-        """Company-wise production data for all warehouses of this reorder company."""
+        """Fetch production consumption ADS data."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
 
@@ -441,7 +447,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return self._cr.dictfetchall()
 
     def get_resupply_data(self, warehouses, line_product_ids):
-        """Company-wise subcontract/resupply data for this reorder company."""
+        """Fetch subcontracting resupply ADS data."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
         if not self.company_id.use_subcontracting_for_demand:
@@ -467,7 +473,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return self._cr.dictfetchall()
 
     def get_scrap_data(self, warehouses, line_product_ids):
-        """Company-wise scrap data for this reorder company."""
+        """Fetch scrap ADS data for products and warehouses."""
         if not self.sales_start_date or not self.sales_end_date or not line_product_ids:
             return []
         if not self.company_id.use_scrap_for_demand:
@@ -491,7 +497,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return self._cr.dictfetchall()
 
     def _get_kit_component(self, products):
-        """Same as extended Reorder with Real Demand kit component expansion."""
+        """Expand kit products into BOM component products."""
         component_products = self.env['product.product']
         for product in products:
             bom = self._get_product_bom(product)
@@ -500,7 +506,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return component_products
 
     def _merge_ads_data(self, sales_data, production_data, resupply_data, scrap_data):
-        """Same as extended Reorder with Real Demand ADS merge."""
+        """Merge sales, production, resupply and scrap ADS by product."""
         if not any((sales_data, production_data, resupply_data, scrap_data)):
             return []
 
@@ -551,7 +557,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return merged
 
     def _get_warehouse_qty_summary(self, product, warehouses):
-        """Same warehouse free/incoming summary as Reorder with Real Demand."""
+        """Return free, outgoing and incoming qty across warehouses."""
         wh_available = sum(
             product.with_context(warehouse_id=warehouse.id).virtual_available
             for warehouse in warehouses
@@ -571,7 +577,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def get_stock_move(self, product, warehouses):
-        """Incoming moves for all warehouses of this reorder company."""
+        """Return open incoming stock move IDs for product."""
         stock_location_ids = warehouses.mapped('lot_stock_id').ids
         return self.env['stock.move'].search([
             ('product_id', '=', product.id),
@@ -580,7 +586,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         ]).ids
 
     def _rounding_demand_quantity(self, quantity):
-        """Same rounding as Reorder with Real Demand."""
+        """Round demand qty by company rounding rules."""
         self.ensure_one()
         round_qty = self.company_id.reorder_round_quantity
         rounding_method = self.company_id.reorder_rounding_method
@@ -595,7 +601,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return quantity
 
     def _prepare_base_line_vals(self, warehouses, product):
-        """Prepare base demand line values for one product, company-wise."""
+        """Prepare stock fields for one demand line."""
         wh_summary = self._get_warehouse_qty_summary(product, warehouses)
         moves = self.get_stock_move(product, warehouses)
         return {
@@ -606,7 +612,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def prepare_reorder_line_vals(self, warehouses, demand_data, is_mto_route=False):
-        """Company-wise demand using each product's component-line lead days."""
+        """Build or update demand lines from ADS and lead days."""
         vals = []
         reorder_demand_growth = (
                 self.reorder_demand_growth and self.reorder_demand_growth / 100 or 0.0
@@ -661,10 +667,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return vals
 
     def action_reorder_confirm(self):
-        """
-        Company-wise demand generation for all warehouses of this reorder company.
-        Lead days come from each product's component line.
-        """
+        """Generate demand lines for all company warehouses."""
         self.ensure_one()
         self.demand_line_ids.unlink()
         self.summary_ids.unlink()
@@ -696,13 +699,13 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_recalculate_demand(self):
-        """Recalculate Demand after Validate."""
+        """Recalculate demand lines after validation."""
         for record in self:
             record.action_reorder_confirm()
         return True
 
     def action_validate(self):
-        """Validate button: calculate demand and move to In Progress."""
+        """Validate inputs and generate demand lines."""
         for record in self:
             if not record.component_line_ids:
                 raise UserError(_('Please load components before validating demand.'))
@@ -714,14 +717,14 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_reorder_cancel(self):
-        """Cancel product-wise demand."""
+        """Cancel the product-wise demand process."""
         for record in self:
             if record.state not in ('done', 'cancel', 'verified'):
                 record.write({'state': 'cancel'})
         return True
 
     def action_reorder_reset_to_draft(self):
-        """Reset to Draft and clear generated lines."""
+        """Reset to draft and clear generated lines."""
         for record in self:
             record.demand_line_ids.unlink()
             record.summary_ids.unlink()
@@ -733,7 +736,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def _filter_supplier_info_by_moq(self, ps_info, total_demand):
-        """Same supplier MOQ filter as Reorder with Real Demand."""
+        """Pick supplier pricelist matching demand and MOQ."""
         ps_info_have_min_qty = ps_info.filtered(lambda info: info.reorder_minimum_quantity > 0)
         if ps_info_have_min_qty:
             ps_info_have_min_qty = ps_info_have_min_qty.filtered(
@@ -746,7 +749,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return ps_info
 
     def _get_product_supplier_info(self, product, company_id, total_demand):
-        """Same supplier resolution as Reorder with Real Demand."""
+        """Resolve supplier pricelist for product and demand."""
         self.ensure_one()
         partner = False
         if self.vendor_selection_strategy == 'specific_vendor':
@@ -775,7 +778,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return self._filter_supplier_info_by_moq(ps_info, total_demand)
 
     def _compute_to_be_ordered_in_purchase_uom(self, product, demanded_qty, order_qty, vendor_moq=0):
-        """Purchase UOM quantity — same rules as Reorder with Real Demand summary."""
+        """Convert order qty to purchase UoM, applying vendor MOQ."""
         purchase_qty = round(
             product.uom_id._compute_quantity(qty=order_qty, to_unit=product.uom_po_id)
         )
@@ -784,7 +787,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return purchase_qty
 
     def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
-        """Same purchase MOQ/qty/price details as Reorder with Real Demand."""
+        """Return vendor MOQ, purchase UoM qty and unit price."""
         vendor_moq = 0
         price = product.standard_price or 0.0
         ps_info = self._get_product_supplier_info(product, company_id, demanded_qty)
@@ -809,7 +812,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return vendor_moq, purchase_qty, price
 
     def _is_mto_buy_or_manufacture_product(self, product):
-        """True when product has MTO with Buy and/or Manufacture routes."""
+        """Check if product uses MTO with Buy or Manufacture."""
         route_names = set(product.route_ids.mapped('name'))
         return (
                 {'Buy', 'Replenish on Order (MTO)'} <= route_names
@@ -817,7 +820,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _get_order_action(self, product):
-        """Same action selection as Reorder with Real Demand."""
+        """Decide purchase or production action for product."""
         route_names = set(product.route_ids.mapped('name'))
         if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
             return 'production'
@@ -828,6 +831,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return 'purchase'
 
     def _get_summary_vals_by_product(self, summary_vals):
+        """Index pending summary vals by product id."""
         return {
             command[2]['product_id']: command[2]
             for command in summary_vals
@@ -837,7 +841,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     def _prepare_net_demand_summary_line_vals(
             self, product, order_qty, demanded_qty, order_action, company_id=None
     ):
-        """Same summary line preparation as Reorder with Real Demand."""
+        """Prepare one summary line with MOQ and purchase UoM qty."""
         weight = max(product.weight or 1.0, 1.0)
         line_volume = order_qty * (product.volume or 0.0) * weight
         company_id = company_id or self.env.company
@@ -858,7 +862,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def prepare_reorder_summary_vals(self):
-        """Create summary lines from demand lines."""
+        """Build summary lines and total reorder amount."""
         self.ensure_one()
         summary_vals = []
         reorder_total_amount = 0.0
@@ -902,7 +906,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return summary_vals, reorder_total_amount
 
     def action_verify(self):
-        """Verify button: create summary lines with Action, then set state to verified."""
+        """Create summary lines and move process to verified."""
         for record in self:
             if not record.demand_line_ids:
                 raise UserError(_('Please validate demand before verifying.'))
@@ -926,7 +930,7 @@ class AdvanceReorderProductRealDemand(models.Model):
     # -----------------------------------------
 
     def _get_date_planned(self, partner_id, product_id, product_qty, start_date):
-        """Same planned date calculation as Reorder with Real Demand."""
+        """Compute planned receipt date from vendor and company lead."""
         days = self.company_id.po_lead or 0
         days += product_id._select_seller(
             partner_id=partner_id,
@@ -938,7 +942,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return date_planned.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
 
     def _prepare_purchase_order_line_vals(self, fpos, partner=None, summary_lines=None):
-        """Prepare PO lines from company-wise summary lines."""
+        """Prepare purchase order line values from summaries."""
         partner = partner or self.vendor_id
         if not partner:
             raise UserError(_('A vendor is required to prepare purchase order lines.'))
@@ -1019,7 +1023,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return po_line_vals
 
     def create_purchase_order(self, default_warehouse, partner=None, summary_lines=None):
-        """Same purchase order creation as Reorder with Real Demand, company-wise."""
+        """Create or update draft purchase order for vendor."""
         partner = partner or self.vendor_id
         if not partner:
             raise UserError(_('A vendor is required to create a purchase order.'))
@@ -1074,7 +1078,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return purchase_order_obj.create(vals)
 
     def get_vendor_product_mapping_dict(self, purchase_summaries):
-        """Same vendor/product mapping as Reorder with Real Demand."""
+        """Map vendors to products using selection strategy."""
         product_ids = purchase_summaries.mapped('product_id')
         vendor_product_dict = {}
         if self.vendor_selection_strategy == 'specific_vendor':
@@ -1120,7 +1124,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return vendor_product_dict
 
     def action_create_reorder_purchase_order(self):
-        """Opens the PO vendor wizard to select a warehouse and create purchase orders."""
+        """Open wizard to create purchase orders."""
         self.ensure_one()
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
@@ -1144,7 +1148,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def create_purchase_orders_for_warehouse(self, warehouse):
-        """Creates purchase orders on the selected warehouse using vendor selection strategy."""
+        """Create purchase orders for warehouse by vendor strategy."""
         self.ensure_one()
         if not warehouse:
             raise UserError(_('Please select a warehouse to create purchase orders.'))
@@ -1183,7 +1187,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def action_create_reorder_manufacturing_orders(self):
-        """Opens the wizard to select a warehouse for creating manufacturing orders."""
+        """Open wizard to create manufacturing orders."""
         self.ensure_one()
         wizard = self.env['advance.reorder.mrp.wizard'].create({
             'product_wise_reorder_id': self.id,
@@ -1200,7 +1204,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         }
 
     def create_manufacturing_orders(self, warehouse_id):
-        """Creates manufacturing orders from verified production summary lines."""
+        """Create manufacturing orders from production summaries."""
         self.ensure_one()
         if self.state != 'verified':
             raise UserError(_(
@@ -1225,7 +1229,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return True
 
     def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse):
-        """Prepares manufacturing order values from production summary lines."""
+        """Prepare manufacturing order values from summaries."""
         mo_vals_list = []
         for summary_line in production_summaries:
             product = summary_line.product_id
@@ -1257,7 +1261,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return mo_vals_list
 
     def action_purchase_count(self):
-        """Opens linked purchase orders."""
+        """Open linked purchase orders."""
         self.ensure_one()
         action = self.env['ir.actions.actions']._for_xml_id('purchase.purchase_form_action')
         purchases = self.mapped('purchase_ids')
@@ -1275,7 +1279,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         return action
 
     def action_production_count(self):
-        """Opens linked manufacturing orders."""
+        """Open linked manufacturing orders."""
         self.ensure_one()
         action = self.env['ir.actions.actions']._for_xml_id('mrp.mrp_production_action')
         productions = self.mapped('production_ids')
