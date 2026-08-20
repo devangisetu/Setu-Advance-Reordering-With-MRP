@@ -155,6 +155,9 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Has Production Action',
         compute='_compute_summary_action_flags',
     )
+    fg_count = fields.Integer(compute='_compute_fg_count')
+    sfg_count = fields.Integer(compute='_compute_sfg_count')
+    component_count = fields.Integer(compute='_compute_component_count')
     currency_id = fields.Many2one(
         'res.currency',
         string='Currency',
@@ -212,6 +215,133 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Count linked manufacturing orders."""
         for record in self:
             record.production_count = len(record.production_ids)
+
+    def _get_demand_lines_by_classification(self, classification):
+        """Return demand lines matching reorder product classification."""
+        self.ensure_one()
+        return self.demand_line_ids.filtered(
+            lambda line: line.product_id.reorder_product_classification == classification
+        )
+
+    def _compute_fg_count(self):
+        """Count finished goods demand lines."""
+        for record in self:
+            record.fg_count = len(
+                record.demand_line_ids.filtered(
+                    lambda line: line.product_id.reorder_product_classification == 'finished_good'
+                )
+            )
+
+    def _compute_sfg_count(self):
+        """Count semi-finished goods demand lines."""
+        for record in self:
+            record.sfg_count = len(
+                record.demand_line_ids.filtered(
+                    lambda line: line.product_id.reorder_product_classification == 'semi_finished_good'
+                )
+            )
+
+    def _compute_component_count(self):
+        """Count raw material / component demand lines."""
+        for record in self:
+            record.component_count = len(
+                record.demand_line_ids.filtered(
+                    lambda line: line.product_id.reorder_product_classification == 'raw_material'
+                )
+            )
+
+    def action_view_fg(self):
+        """Open finished goods demand calculation lines."""
+        self.ensure_one()
+        fg_lines = self._get_demand_lines_by_classification('finished_good')
+        return {
+            'name': _('FG Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.product.wise.process.line',
+            'view_mode': 'list',
+            'views': [(
+                self.env.ref(
+                    'setu_advance_reordering_extended.view_product_wise_fg_demand_planning_tree'
+                ).id,
+                'list',
+            )],
+            'domain': [('id', 'in', fg_lines.ids)],
+            'target': 'current',
+        }
+
+    def action_view_sfg(self):
+        """Prepare and open semi-finished goods planning lines."""
+        self.ensure_one()
+        PlanningLine = self.env['advance.reorder.planning.line']
+        PlanningLine.search([
+            ('product_wise_reorder_id', '=', self.id),
+            ('line_type', '=', 'sfg'),
+        ]).unlink()
+        planning_vals = [
+            {
+                'product_wise_reorder_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.demand_adjustment_qty,
+                'line_type': 'sfg',
+            }
+            for line in self._get_demand_lines_by_classification('semi_finished_good')
+        ]
+        if planning_vals:
+            PlanningLine.create(planning_vals)
+        return {
+            'name': _('SFG Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.planning.line',
+            'view_mode': 'list',
+            'views': [(
+                self.env.ref(
+                    'setu_advance_reordering_extended.view_advance_reorder_planning_line_tree'
+                ).id,
+                'list',
+            )],
+            'domain': [
+                ('product_wise_reorder_id', '=', self.id),
+                ('line_type', '=', 'sfg'),
+            ],
+            'target': 'current',
+        }
+
+    def action_view_components(self):
+        """Prepare and open component demand planning lines."""
+        self.ensure_one()
+        PlanningLine = self.env['advance.reorder.planning.line']
+        PlanningLine.search([
+            ('product_wise_reorder_id', '=', self.id),
+            ('line_type', '=', 'component'),
+        ]).unlink()
+        planning_vals = [
+            {
+                'product_wise_reorder_id': self.id,
+                'product_id': line.product_id.id,
+                'net_demand': line.demand_adjustment_qty,
+                'line_type': 'component',
+            }
+            for line in self._get_demand_lines_by_classification('raw_material')
+        ]
+        if planning_vals:
+            PlanningLine.create(planning_vals)
+        return {
+            'name': _('Components Demand Calculation'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.planning.line',
+            'view_mode': 'list',
+            'views': [(
+                self.env.ref(
+                    'setu_advance_reordering_extended.view_advance_reorder_planning_line_tree'
+                ).id,
+                'list',
+            )],
+            'domain': [
+                ('product_wise_reorder_id', '=', self.id),
+                ('line_type', '=', 'component'),
+            ],
+            'target': 'current',
+        }
 
     @api.depends('summary_ids', 'summary_ids.order_action')
     def _compute_summary_action_flags(self):

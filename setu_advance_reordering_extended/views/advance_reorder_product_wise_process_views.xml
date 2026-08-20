@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <record id="view_product_wise_fg_demand_planning_tree" model="ir.ui.view">
+        <field name="name">advance.reorder.product.wise.process.line.fg.tree</field>
+        <field name="model">advance.reorder.product.wise.process.line</field>
+        <field name="arch" type="xml">
+            <list string="FG Demand Calculation" create="false" edit="false" delete="false">
+                <field name="product_id"/>
+                <field name="demand_adjustment_qty" string="Demand"/>
+            </list>
+        </field>
+    </record>
+
     <record id="view_advance_reorder_product_real_demand_list" model="ir.ui.view">
         <field name="name">advance.reorder.product.wise.process.list</field>
         <field name="model">advance.reorder.product.wise.process</field>
@@ -73,6 +84,9 @@
                         <field name="production_count" invisible="1"/>
                         <field name="has_purchase_action_summary" invisible="1"/>
                         <field name="has_production_action_summary" invisible="1"/>
+                        <field name="fg_count" invisible="1"/>
+                        <field name="sfg_count" invisible="1"/>
+                        <field name="component_count" invisible="1"/>
                         <button type="object"
                                 name="action_purchase_count"
                                 class="oe_stat_button"
@@ -86,6 +100,27 @@
                                 icon="fa-wrench"
                                 invisible="production_count == 0">
                             <field name="production_count" widget="statinfo" string="Manufacturing Orders"/>
+                        </button>
+                        <button type="object"
+                                name="action_view_fg"
+                                class="oe_stat_button"
+                                icon="fa-cube"
+                                invisible="fg_count == 0">
+                            <field name="fg_count" widget="statinfo" string="FG"/>
+                        </button>
+                        <button type="object"
+                                name="action_view_sfg"
+                                class="oe_stat_button"
+                                icon="fa-cubes"
+                                invisible="sfg_count == 0">
+                            <field name="sfg_count" widget="statinfo" string="SFG"/>
+                        </button>
+                        <button type="object"
+                                name="action_view_components"
+                                class="oe_stat_button"
+                                icon="fa-cogs"
+                                invisible="component_count == 0">
+                            <field name="component_count" widget="statinfo" string="Components"/>
                         </button>
                     </div>
                     <div class="oe_title">
