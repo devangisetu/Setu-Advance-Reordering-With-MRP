@@ -100,6 +100,10 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             raise UserError(_(
                 'Purchase orders can only be created from a verified product-wise demand.'
             ))
+        if real_demand.purchase_ids:
+            raise UserError(_(
+                'Purchase orders have already been created for this product-wise demand.'
+            ))
         if not real_demand.summary_ids.filtered(lambda summary: summary.order_action == 'purchase'):
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
 
@@ -129,7 +133,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                     'No purchase orders were created. Check that products have demand and that '
                     'the selected vendors have supplier pricelist lines on those products.'
                 ))
-            real_demand.write({'state': 'done'})
+            real_demand._update_state_after_order_creation()
             return {'type': 'ir.actions.act_window_close'}
 
         real_demand.create_purchase_orders_for_warehouse(self.warehouse_id)

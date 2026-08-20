@@ -221,6 +221,20 @@ class AdvanceReorderProductRealDemand(models.Model):
             record.has_purchase_action_summary = 'purchase' in actions
             record.has_production_action_summary = 'production' in actions
 
+    def _are_all_order_actions_done(self):
+        """Return True when every required summary action has been generated."""
+        self.ensure_one()
+        actions = set(self.summary_ids.mapped('order_action'))
+        purchase_done = bool(self.purchase_ids) if 'purchase' in actions else True
+        production_done = bool(self.production_ids) if 'production' in actions else True
+        return purchase_done and production_done
+
+    def _update_state_after_order_creation(self):
+        """Mark process done only when all required PO/MO actions are complete."""
+        for record in self:
+            if record.state == 'verified' and record._are_all_order_actions_done():
+                record.write({'state': 'done'})
+
     @api.model_create_multi
     def create(self, vals_list):
         """Assign sequence number on create."""
@@ -1126,6 +1140,10 @@ class AdvanceReorderProductRealDemand(models.Model):
     def action_create_reorder_purchase_order(self):
         """Open wizard to create purchase orders."""
         self.ensure_one()
+        if self.purchase_ids:
+            raise UserError(_(
+                'Purchase orders have already been created for this product-wise demand.'
+            ))
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
@@ -1156,6 +1174,10 @@ class AdvanceReorderProductRealDemand(models.Model):
             raise UserError(_(
                 'Purchase orders can only be created from a verified product-wise demand.'
             ))
+        if self.purchase_ids:
+            raise UserError(_(
+                'Purchase orders have already been created for this product-wise demand.'
+            ))
 
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
@@ -1182,13 +1204,16 @@ class AdvanceReorderProductRealDemand(models.Model):
                 summary_lines=summary_lines,
             )
 
-        if self.purchase_ids:
-            self.write({'state': 'done'})
+        self._update_state_after_order_creation()
         return True
 
     def action_create_reorder_manufacturing_orders(self):
         """Open wizard to create manufacturing orders."""
         self.ensure_one()
+        if self.production_ids:
+            raise UserError(_(
+                'Manufacturing orders have already been created for this product-wise demand.'
+            ))
         wizard = self.env['advance.reorder.mrp.wizard'].create({
             'product_wise_reorder_id': self.id,
             'company_id': self.company_id.id,
@@ -1226,6 +1251,7 @@ class AdvanceReorderProductRealDemand(models.Model):
             raise UserError(_('No manufacturing orders to create.'))
 
         Production.create(mo_vals_list)
+        self._update_state_after_order_creation()
         return True
 
     def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse):

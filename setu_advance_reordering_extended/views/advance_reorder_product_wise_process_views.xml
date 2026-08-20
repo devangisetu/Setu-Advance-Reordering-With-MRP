@@ -55,7 +55,7 @@
                             invisible="state != 'inprogress'"/>
                     <button name="action_create_reorder_purchase_order" type="object" string="Create PO"
                             class="btn-primary"
-                            invisible="state != 'verified' or not has_purchase_action_summary"/>
+                            invisible="state != 'verified' or not has_purchase_action_summary or purchase_count > 0"/>
                     <button name="action_create_reorder_manufacturing_orders" type="object" string="Create MO"
                             class="btn-primary"
                             invisible="state != 'verified' or not has_production_action_summary or production_count > 0"/>
