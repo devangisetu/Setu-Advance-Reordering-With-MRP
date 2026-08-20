@@ -153,9 +153,6 @@
                                 <list create="0" edit="0" delete="0">
                                     <field name="product_id"/>
                                     <field name="average_daily_sale"/>
-                                    <field name="sales_qty" optional="show"/>
-                                    <field name="sales_return_qty" optional="hide"/>
-                                    <field name="consumed_qty" optional="show"/>
                                     <field name="available_stock"/>
                                     <field name="incoming_qty" readonly="1" force_save="1"/>
                                     <button class="oe_stat_button oe_inline"
@@ -163,6 +160,9 @@
                                             type="object"
                                             icon="fa-exchange"
                                             title="Incoming Stock Moves"/>
+                                    <field name="sales_qty" optional="show"/>
+                                    <field name="sales_return_qty" optional="hide"/>
+                                    <field name="consumed_qty" optional="show"/>
                                     <field name="resupply_qty" optional="show"/>
                                     <field name="resupply_return_qty" optional="hide"/>
                                     <field name="scrap_qty" optional="show"/>
