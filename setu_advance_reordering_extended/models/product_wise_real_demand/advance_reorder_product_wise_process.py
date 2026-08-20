@@ -774,19 +774,22 @@ class AdvanceReorderProductRealDemand(models.Model):
             ps_info = product.seller_ids.filtered(lambda info: info.partner_id == partner)
         return self._filter_supplier_info_by_moq(ps_info, total_demand)
 
+    def _compute_to_be_ordered_in_purchase_uom(self, product, demanded_qty, order_qty, vendor_moq=0):
+        """Purchase UOM quantity — same rules as Reorder with Real Demand summary."""
+        purchase_qty = round(
+            product.uom_id._compute_quantity(qty=order_qty, to_unit=product.uom_po_id)
+        )
+        if vendor_moq and demanded_qty < vendor_moq:
+            purchase_qty = vendor_moq
+        return purchase_qty
+
     def _get_purchase_details(self, product, company_id, demanded_qty, order_qty):
         """Same purchase MOQ/qty/price details as Reorder with Real Demand."""
         vendor_moq = 0
-        purchase_qty = 0
         price = product.standard_price or 0.0
         ps_info = self._get_product_supplier_info(product, company_id, demanded_qty)
         if ps_info:
             vendor_moq = ps_info.reorder_minimum_quantity
-            purchase_qty = round(
-                product.uom_id._compute_quantity(qty=order_qty, to_unit=product.uom_po_id)
-            )
-            if demanded_qty < vendor_moq:
-                purchase_qty = vendor_moq
             if company_id and ps_info.currency_id != company_id.currency_id:
                 price = ps_info.currency_id._convert(
                     ps_info.price,
@@ -797,6 +800,12 @@ class AdvanceReorderProductRealDemand(models.Model):
                 )
             else:
                 price = ps_info.price
+        purchase_qty = self._compute_to_be_ordered_in_purchase_uom(
+            product,
+            demanded_qty,
+            order_qty,
+            vendor_moq if ps_info else 0,
+        )
         return vendor_moq, purchase_qty, price
 
     def _is_mto_buy_or_manufacture_product(self, product):

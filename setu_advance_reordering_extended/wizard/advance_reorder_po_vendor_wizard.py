@@ -204,28 +204,62 @@ class AdvanceReorderPoVendorWizardLine(models.TransientModel):
         'product_wise_summary_line_id.order_qty',
         'product_wise_summary_line_id.vendor_moq',
         'product_wise_summary_line_id.demanded_qty',
+        'product_wise_summary_line_id.to_be_ordered_in_purchase_uom',
     )
     def _compute_vendor_related_fields(self):
         product_wise_lines = self.filtered('product_wise_summary_line_id')
         for line in product_wise_lines:
             summary = line.product_wise_summary_line_id
+            product = line.product_id
+            real_demand = line.wizard_id.product_wise_reorder_id
+            if not summary or not product or not real_demand:
+                line.vendor_moq = 0
+                line.order_qty = 0
+                continue
+
             demand_qty = summary.demanded_qty or 0.0
             vendor_moq = summary.vendor_moq or 0.0
             order_qty = summary.order_qty or demand_qty
             supplier_info = line._get_supplier_info_for_vendor(
-                line.product_id, line.vendor_id, demand_qty
+                product, line.vendor_id, demand_qty
             )
             if supplier_info:
                 vendor_moq = supplier_info.reorder_minimum_quantity or 0.0
                 order_qty = max(demand_qty, vendor_moq)
+                po_qty = real_demand._compute_to_be_ordered_in_purchase_uom(
+                    product, demand_qty, order_qty, vendor_moq
+                )
+            elif summary.to_be_ordered_in_purchase_uom > 0:
+                po_qty = summary.to_be_ordered_in_purchase_uom
+            else:
+                po_qty = real_demand._compute_to_be_ordered_in_purchase_uom(
+                    product, demand_qty, order_qty, vendor_moq
+                )
+
             line.vendor_moq = round(vendor_moq)
-            line.order_qty = round(order_qty)
+            line.order_qty = round(po_qty)
         remaining = self - product_wise_lines
         if remaining:
             super(AdvanceReorderPoVendorWizardLine, remaining)._compute_vendor_related_fields()
 
     def _sync_summary_vendor_moq(self):
         for line in self:
-            if line.product_wise_summary_line_id:
-                line.product_wise_summary_line_id.write({'vendor_moq': line.vendor_moq})
+            if not line.product_wise_summary_line_id:
+                continue
+            summary = line.product_wise_summary_line_id
+            product = line.product_id
+            real_demand = line.wizard_id.product_wise_reorder_id
+            if not product or not real_demand:
+                summary.write({'vendor_moq': line.vendor_moq})
+                continue
+
+            demand_qty = summary.demanded_qty or 0.0
+            order_qty = max(demand_qty, line.vendor_moq) if line.vendor_moq else (summary.order_qty or demand_qty)
+            purchase_qty = real_demand._compute_to_be_ordered_in_purchase_uom(
+                product, demand_qty, order_qty, line.vendor_moq
+            )
+            summary.write({
+                'vendor_moq': line.vendor_moq,
+                'to_be_ordered_in_purchase_uom': purchase_qty,
+            })
         super()._sync_summary_vendor_moq()
