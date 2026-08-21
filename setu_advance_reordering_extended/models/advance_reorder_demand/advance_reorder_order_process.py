@@ -393,6 +393,9 @@ class AdvanceReorderOrderProcess(models.Model):
                 'resupply_return_qty': resupply.get('resupply_return_qty', 0.0),
                 'scrap_qty': scrap.get('scrap_qty', 0.0),
                 'ads': avg_ads,
+                # Preserve forecast-sales fields used by prepare_reorder_line_vals
+                'lead_days_demand_stock': sales.get('lead_days_demand_stock', 0.0),
+                'expected_sales_stock': sales.get('expected_sales_stock', 0.0),
             })
         return merged
 
@@ -525,9 +528,6 @@ class AdvanceReorderOrderProcess(models.Model):
         self.check_configuration_product()
         vals = []
         reorder_vals = {}
-        resupply_data = []
-        production_data = []
-        scrap_data = []
         for config in self.config_ids:
             line_product_ids = self.product_ids.filtered(lambda x: not x.is_kit_product)
             kit_product_ids = self.product_ids.filtered(lambda x: x.is_kit_product)
@@ -537,7 +537,13 @@ class AdvanceReorderOrderProcess(models.Model):
                 production_data = self.get_production_data(config, line_product_ids)
                 scrap_data = self.get_scrap_data(config, line_product_ids,)
                 resupply_data = self.get_resupply_data(config, line_product_ids)
-            demand_data = self._merge_ads_data(sales_data, production_data, resupply_data, scrap_data)
+                demand_data = self._merge_ads_data(
+                    sales_data, production_data, resupply_data, scrap_data
+                )
+            else:
+                # Forecast sales already has lead/coverage demand; keep it as-is
+                # so MRP tabs (component / to-be-produced / by-product) get qty.
+                demand_data = sales_data
             vals.extend(
                 self.prepare_reorder_line_vals(config, demand_data, is_mto_route=False))
         if not self.state == 'inprogress':
@@ -626,14 +632,14 @@ class AdvanceReorderOrderProcess(models.Model):
             return
 
         if self.calculate_demand_based_on_selected_bom:
+            default_bom = bom or self._get_product_bom(product)
+            bom_wise_demand = [(default_bom, quantity)] if default_bom else []
+        else:
             bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                 product,
                 quantity,
                 mo_bom_wise_data=mo_bom_wise_data,
             )
-        else:
-            default_bom = bom or self._get_product_bom(product)
-            bom_wise_demand = [(default_bom, quantity)] if default_bom else []
 
         if not bom_wise_demand:
             _logger.warning(
@@ -1402,7 +1408,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 ))
 
             bom_wise_demand = False
-            if self.calculate_demand_based_on_selected_bom:
+            if not self.calculate_demand_based_on_selected_bom:
                 bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                     product,
                     summary_line.order_qty,

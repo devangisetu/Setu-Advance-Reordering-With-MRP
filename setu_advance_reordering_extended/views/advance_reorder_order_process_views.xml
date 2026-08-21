@@ -28,7 +28,8 @@
         <field name="inherit_id" ref="setu_advance_reordering.form_advance_reorder_orderprocess"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='generate_demand_with']" position="after">
-                <field name="calculate_demand_based_on_selected_bom" readonly="state != 'draft'" invisible="generate_demand_with == 'forecast_sales'"/>
+                <field name="calculate_demand_based_on_selected_bom" readonly="state != 'draft'"
+                       invisible="generate_demand_with == 'forecast_sales'"/>
                 <field name="has_purchase_action_summary" invisible="1"/>
                 <field name="has_production_action_summary" invisible="1"/>
                 <field name="show_subcontracting_qty" invisible="1"/>
@@ -179,7 +180,7 @@
                                     title="Incoming Stock Moves"/>
                             <field name="scrap_qty" optional="show"/>
                             <field name="net_demand" readonly="1" optional="show"/>
-                             <field name="demand_adjustment_qty" optional="show"/>
+                            <field name="demand_adjustment_qty" optional="show"/>
                         </list>
                         <form string="Component Demand" create="false" delete="false">
                             <sheet>
