@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from collections import defaultdict
 from datetime import datetime
 from statistics import mean
 from dateutil.relativedelta import relativedelta
@@ -121,6 +122,24 @@ class AdvanceReorderProductRealDemand(models.Model):
         copy=False,
         readonly=True,
     )
+    to_be_produced_line_ids = fields.One2many(
+        'advance.reorder.productwise.produced.demand.line',
+        'product_wise_reorder_id',
+        string='To Be Produced Lines',
+        copy=False,
+    )
+    component_demand_line_ids = fields.One2many(
+        'advance.reorder.productwise.component.demand.line',
+        'product_wise_reorder_id',
+        string='Component Demand Lines',
+        copy=False,
+    )
+    by_product_line_ids = fields.One2many(
+        'advance.reorder.productwise.by.product.line',
+        'product_wise_reorder_id',
+        string='By Product Lines',
+        copy=False,
+    )
     summary_ids = fields.One2many(
         'advance.reorder.product.wise.order.summary',
         'product_wise_reorder_id',
@@ -233,22 +252,24 @@ class AdvanceReorderProductRealDemand(models.Model):
             )
 
     def _compute_sfg_count(self):
-        """Count semi-finished goods demand lines."""
+        """Count semi-finished goods demand lines including To Be Produced."""
         for record in self:
-            record.sfg_count = len(
+            line_count = len(
                 record.demand_line_ids.filtered(
                     lambda line: line.product_id.reorder_product_classification == 'semi_finished_good'
                 )
             )
+            record.sfg_count = line_count + len(record.to_be_produced_line_ids)
 
     def _compute_component_count(self):
-        """Count raw material / component demand lines."""
+        """Count raw material / component demand lines including Component Demand tab."""
         for record in self:
-            record.component_count = len(
+            line_count = len(
                 record.demand_line_ids.filtered(
                     lambda line: line.product_id.reorder_product_classification == 'raw_material'
                 )
             )
+            record.component_count = line_count + len(record.component_demand_line_ids)
 
     def action_view_fg(self):
         """Open finished goods demand calculation lines."""
@@ -281,11 +302,20 @@ class AdvanceReorderProductRealDemand(models.Model):
             {
                 'product_wise_reorder_id': self.id,
                 'product_id': line.product_id.id,
+                'net_demand': line.net_demand,
+                'line_type': 'sfg',
+            }
+            for line in self.to_be_produced_line_ids
+        ]
+        planning_vals.extend([
+            {
+                'product_wise_reorder_id': self.id,
+                'product_id': line.product_id.id,
                 'net_demand': line.demand_adjustment_qty,
                 'line_type': 'sfg',
             }
             for line in self._get_demand_lines_by_classification('semi_finished_good')
-        ]
+        ])
         if planning_vals:
             PlanningLine.create(planning_vals)
         return {
@@ -318,11 +348,20 @@ class AdvanceReorderProductRealDemand(models.Model):
             {
                 'product_wise_reorder_id': self.id,
                 'product_id': line.product_id.id,
+                'net_demand': line.net_demand,
+                'line_type': 'component',
+            }
+            for line in self.component_demand_line_ids
+        ]
+        planning_vals.extend([
+            {
+                'product_wise_reorder_id': self.id,
+                'product_id': line.product_id.id,
                 'net_demand': line.demand_adjustment_qty,
                 'line_type': 'component',
             }
             for line in self._get_demand_lines_by_classification('raw_material')
-        ]
+        ])
         if planning_vals:
             PlanningLine.create(planning_vals)
         return {
@@ -811,13 +850,16 @@ class AdvanceReorderProductRealDemand(models.Model):
         return vals
 
     def action_reorder_confirm(self):
-        """Generate demand lines for all company warehouses."""
+        """Generate demand lines for all company warehouses, then MRP component tabs."""
         self.ensure_one()
         self.demand_line_ids.unlink()
+        self.to_be_produced_line_ids.unlink()
+        self.component_demand_line_ids.unlink()
+        self.by_product_line_ids.unlink()
         self.summary_ids.unlink()
         vals = []
         warehouses = self._get_company_warehouses()
-        product_ids = self.component_line_ids.product_id
+        product_ids = self.product_id
 
         line_product_ids = product_ids.filtered(lambda product: not product.is_kit_product)
         kit_product_ids = product_ids.filtered(lambda product: product.is_kit_product)
@@ -840,7 +882,270 @@ class AdvanceReorderProductRealDemand(models.Model):
                 'state': 'inprogress',
             }
         self.write(write_vals)
+        self.invalidate_recordset(['demand_line_ids'])
+        if self.demand_line_ids:
+            self._collect_mrp_tab_requirements()
+            self._round_mrp_demand_quantities()
         return True
+
+    def _round_mrp_demand_quantities(self):
+        """Round demand quantities in MRP demand lines."""
+        self._round_demand_qty(self.to_be_produced_line_ids)
+        self._round_demand_qty(self.component_demand_line_ids)
+
+    def _round_demand_qty(self, lines):
+        """Round demand quantity for the given recordset."""
+        for line in lines:
+            line.demand_adjustment_qty = round(self._rounding_demand_quantity(line.net_demand))
+
+    def _collect_mrp_tab_requirements(self):
+        """Generate To Be Produced, Component Demand, and By-Product lines by exploding BOMs."""
+        self.ensure_one()
+        produced_data = defaultdict(float)
+        component_data = defaultdict(
+            lambda: {
+                'qty': 0.0,
+                'source_line_ids': [],
+            }
+        )
+        by_product_data = []
+        warehouses = self._get_company_warehouses()
+
+        for line in self.demand_line_ids:
+            product = line.product_id
+            qty = line.demand_adjustment_qty
+
+            if qty <= 0 or product.is_kit_product:
+                continue
+
+            classification = product.reorder_product_classification
+            if classification not in ('finished_good', 'semi_finished_good'):
+                continue
+
+            bom = self._get_product_bom(product)
+            if not bom:
+                _logger.warning(
+                    "Reorder BOM not found for product '%s' (ID: %s). Skipping demand generation.",
+                    product.display_name,
+                    product.id,
+                )
+                continue
+
+            self._explode_bom_into_tabs(
+                product,
+                qty,
+                component_data,
+                produced_data,
+                warehouses,
+                by_product_data=by_product_data,
+                parent_product=product,
+                bom=bom,
+            )
+
+        self._generate_component_demand_lines(warehouses, dict(component_data))
+        self._generate_by_product_lines(by_product_data)
+
+    def _explode_bom_into_tabs(
+            self, product, quantity, component_data, produced_data, warehouses,
+            bom=None, by_product_data=None, parent_product=None,
+    ):
+        """Recursively explode a product BOM into Component / To Be Produced / By-Product tabs."""
+        if quantity <= 0:
+            return
+
+        bom = bom or self._get_product_bom(product)
+        if not bom:
+            _logger.warning(
+                "No BOM found for product %s (ID: %s).",
+                product.display_name,
+                product.id,
+            )
+            return
+
+        bom_parent = parent_product or product
+        self._collect_bom_by_products(product, quantity, by_product_data, bom=bom)
+
+        bom_qty = bom.product_qty or 1.0
+        for bom_line in bom.bom_line_ids:
+            component = bom_line.product_id
+            if not component:
+                continue
+            required_qty = quantity * (bom_line.product_qty / bom_qty)
+            self._process_product_by_classification(
+                component, required_qty, component_data, produced_data, warehouses, bom,
+                by_product_data=by_product_data,
+                source_product=bom_parent, source_qty=quantity,
+            )
+
+    def _process_product_by_classification(
+            self, product, qty, component_data, produced_data, warehouses, bom,
+            by_product_data=None, source_product=None, source_qty=0,
+    ):
+        """Route each BOM component to Component Demand or To Be Produced based on classification."""
+        if not product or qty <= 0:
+            return
+
+        classification = product.reorder_product_classification
+        if classification == 'raw_material':
+            self._add_to_component_tab(component_data, product, qty, bom, source_product, source_qty)
+        elif classification == 'semi_finished_good':
+            line, net_qty = self._create_or_update_to_be_produced_line(
+                product, qty, bom, source_product, source_qty, warehouses, produced_data,
+            )
+            self._explode_bom_into_tabs(
+                product, net_qty, component_data, produced_data, warehouses,
+                bom=line.bom_id,
+                by_product_data=by_product_data,
+                parent_product=product,
+            )
+
+    def _collect_bom_by_products(self, product, parent_mo_qty, by_product_data, bom=None):
+        """Collect by-product quantities generated from a BOM based on parent production qty."""
+        if parent_mo_qty <= 0 or by_product_data is None:
+            return
+
+        bom = bom or self._get_product_bom(product)
+        if not bom or not bom.byproduct_ids:
+            return
+
+        bom_qty = bom.product_qty or 1.0
+        for byproduct in bom.byproduct_ids:
+            if not byproduct.product_id:
+                continue
+            byproduct_qty = parent_mo_qty * (byproduct.product_qty / bom_qty)
+            self._add_to_by_product_tab(
+                by_product_data, byproduct.product_id, byproduct_qty,
+                source_product=product, source_product_demand=parent_mo_qty,
+            )
+
+    def _add_to_by_product_tab(
+            self, by_product_data, product, qty, source_product=None, source_product_demand=0.0,
+    ):
+        """Add a by-product entry to the by-product demand collection."""
+        if product and qty > 0:
+            by_product_data.append({
+                'product_id': product.id,
+                'source_product_id': source_product.id if source_product else False,
+                'source_product_demand': source_product_demand,
+                'quantity': qty,
+            })
+
+    def _add_to_component_tab(self, component_data, product, qty, bom, source_product, source_qty):
+        """Accumulate a component requirement and its source details."""
+        if not product or qty <= 0:
+            return
+
+        component = component_data[product.id]
+        component['qty'] += qty
+        component['source_line_ids'].append(
+            (0, 0, {
+                'source_product_id': source_product.id,
+                'bom_id': bom.id,
+                'source_qty': source_qty,
+                'required_qty': qty,
+            })
+        )
+
+    def _prepare_to_be_produced_line_vals(self, product, required_qty, bom, source_product, source_qty, warehouses):
+        """Prepare values for creating a To Be Produced demand line."""
+        warehouse_qty = self._get_warehouse_qty_summary(product, warehouses)
+        scrap_data = self.get_scrap_data(warehouses, product)
+        product_bom = self._get_product_bom(product)
+        return {
+            'product_wise_reorder_id': self.id,
+            'product_id': product.id,
+            'bom_id': product_bom.id if product_bom else False,
+            'available_qty': warehouse_qty['available'],
+            'required_qty': required_qty,
+            'incoming_qty': warehouse_qty['incoming'],
+            'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
+            'net_demand': max(0.0, required_qty - warehouse_qty['available']),
+            'source_line_ids': [
+                (0, 0, {
+                    'source_product_id': source_product.id,
+                    'bom_id': bom.id,
+                    'source_qty': source_qty,
+                    'required_qty': required_qty,
+                })
+            ],
+        }
+
+    def _create_or_update_to_be_produced_line(
+            self, product, qty, bom, source_product, source_qty, warehouses, produced_data,
+    ):
+        """Create or update a To Be Produced line when an SFG is found in the BOM."""
+        ProducedLine = self.env['advance.reorder.productwise.produced.demand.line']
+        if not product or qty <= 0:
+            return ProducedLine, 0.0
+
+        produced_data[product.id] += qty
+        match_line = self.to_be_produced_line_ids.filtered(
+            lambda line: line.product_id.id == product.id
+        )[:1]
+        if match_line:
+            required_qty = qty
+            if match_line.net_demand <= 0:
+                required_qty = abs(min(0, match_line.available_qty - match_line.required_qty - qty))
+
+            match_line.write({
+                'required_qty': match_line.required_qty + qty,
+                'net_demand': max(0.0, (match_line.required_qty + qty) - match_line.available_qty),
+                'source_line_ids': [
+                    (0, 0, {
+                        'source_product_id': source_product.id,
+                        'bom_id': bom.id,
+                        'source_qty': source_qty,
+                        'required_qty': qty,
+                    })
+                ],
+            })
+            return match_line, required_qty
+
+        vals = self._prepare_to_be_produced_line_vals(
+            product, qty, bom, source_product, source_qty, warehouses,
+        )
+        produced_line = ProducedLine.create(vals)
+        return produced_line, produced_line.net_demand
+
+    def _generate_component_demand_lines(self, warehouses, component_data=None):
+        """Create component demand lines from accumulated BOM component requirements."""
+        if not component_data:
+            return
+
+        ComponentLine = self.env['advance.reorder.productwise.component.demand.line']
+        for product_id, bom_required_qty in component_data.items():
+            product = self.env['product.product'].browse(product_id)
+            warehouse_qty = self._get_warehouse_qty_summary(product, warehouses)
+            qty = bom_required_qty.get('qty')
+            scrap_data = self.get_scrap_data(warehouses, product)
+            ComponentLine.create({
+                'product_wise_reorder_id': self.id,
+                'product_id': product_id,
+                'available_qty': warehouse_qty['available'],
+                'required_qty': qty,
+                'incoming_qty': warehouse_qty['incoming'],
+                'scrap_qty': scrap_data[0].get('scrap_qty', 0) if scrap_data else 0,
+                'net_demand': max(0.0, qty - warehouse_qty['available']),
+                'source_line_ids': bom_required_qty.get('source_line_ids'),
+            })
+
+    def _generate_by_product_lines(self, by_product_data=None):
+        """Create by-product demand lines from collected by-product data."""
+        if not by_product_data:
+            return
+
+        ByProductLine = self.env['advance.reorder.productwise.by.product.line']
+        for entry in by_product_data:
+            quantity = entry.get('quantity', 0.0)
+            if quantity <= 0:
+                continue
+            ByProductLine.create({
+                'product_wise_reorder_id': self.id,
+                'product_id': entry['product_id'],
+                'source_product_id': entry.get('source_product_id'),
+                'source_product_demand': entry.get('source_product_demand', 0.0),
+                'quantity': quantity,
+            })
 
     def action_recalculate_demand(self):
         """Recalculate demand lines after validation."""
@@ -871,6 +1176,9 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Reset to draft and clear generated lines."""
         for record in self:
             record.demand_line_ids.unlink()
+            record.to_be_produced_line_ids.unlink()
+            record.component_demand_line_ids.unlink()
+            record.by_product_line_ids.unlink()
             record.summary_ids.unlink()
             record.component_line_ids.unlink()
             record.write({
@@ -1005,8 +1313,57 @@ class AdvanceReorderProductRealDemand(models.Model):
             'order_action': order_action,
         }
 
+    def _append_net_demand_summary_from_tab_lines(
+            self,
+            summary_vals,
+            reorder_total_amount,
+            tab_lines,
+            order_action,
+    ):
+        """Add products from MRP tab lines to the reorder summary."""
+        summary_by_product = self._get_summary_vals_by_product(summary_vals)
+
+        for tab_line in tab_lines:
+            product = tab_line.product_id
+            if not product or product.id in summary_by_product:
+                continue
+
+            order_qty = round(tab_line.demand_adjustment_qty)
+            if (
+                    product.reorder_product_classification == 'semi_finished_good'
+                    and self._is_mto_buy_or_manufacture_product(product)
+            ):
+                warehouses = self._get_company_warehouses()
+                sales_data = self.get_sales_data(warehouses, product)
+                order_qty = self.prepare_reorder_line_vals(
+                    warehouses, sales_data, is_mto_route=True,
+                ) if sales_data else 0.0
+
+            if order_qty <= 0:
+                continue
+
+            line_vals = self._prepare_net_demand_summary_line_vals(
+                product=product,
+                order_qty=order_qty,
+                demanded_qty=order_qty,
+                order_action=order_action,
+                company_id=self.company_id,
+            )
+            if order_action == 'purchase':
+                _vendor_moq, _purchase_qty, price = self._get_purchase_details(
+                    product, self.company_id, order_qty, order_qty,
+                )
+                reorder_total_amount += round(order_qty) * (price or 0.0)
+            else:
+                reorder_total_amount += round(order_qty) * (product.standard_price or 0.0)
+
+            summary_vals.append((0, 0, line_vals))
+            summary_by_product[product.id] = line_vals
+
+        return summary_vals, reorder_total_amount
+
     def prepare_reorder_summary_vals(self):
-        """Build summary lines and total reorder amount."""
+        """Build summary lines from demand, To Be Produced, and Component Demand tabs."""
         self.ensure_one()
         summary_vals = []
         reorder_total_amount = 0.0
@@ -1047,7 +1404,19 @@ class AdvanceReorderProductRealDemand(models.Model):
             else:
                 reorder_total_amount += round(demanded_qty) * (line.product_id.standard_price or 0.0)
             summary_vals.append((0, 0, line_vals))
-        return summary_vals, reorder_total_amount
+
+        summary_vals, reorder_total_amount = self._append_net_demand_summary_from_tab_lines(
+            summary_vals=summary_vals,
+            reorder_total_amount=reorder_total_amount,
+            tab_lines=self.to_be_produced_line_ids,
+            order_action='production',
+        )
+        return self._append_net_demand_summary_from_tab_lines(
+            summary_vals=summary_vals,
+            reorder_total_amount=reorder_total_amount,
+            tab_lines=self.component_demand_line_ids,
+            order_action='purchase',
+        )
 
     def action_verify(self):
         """Create summary lines and move process to verified."""

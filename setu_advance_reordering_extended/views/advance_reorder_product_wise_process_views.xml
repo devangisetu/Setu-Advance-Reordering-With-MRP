@@ -209,6 +209,66 @@
                                 </list>
                             </field>
                         </page>
+                        <page string="To Be Produced" name="reorder_to_be_produced"
+                              invisible="not to_be_produced_line_ids">
+                            <field name="to_be_produced_line_ids" nolabel="1" readonly="1">
+                                <list string="To Be Produced" create="false" delete="false">
+                                    <field name="product_id"/>
+                                    <field name="bom_id" optional="show"/>
+                                    <field name="bom_type" optional="show"/>
+                                    <field name="available_qty" optional="show"/>
+                                    <field name="required_qty" optional="show"/>
+                                    <button name="action_view_source_products"
+                                            type="object"
+                                            title="Source Products"
+                                            icon="fa-sitemap"/>
+                                    <field name="incoming_qty" optional="show"/>
+                                    <button class="oe_stat_button oe_inline"
+                                            name="action_incoming_stock_moves"
+                                            type="object"
+                                            icon="fa-exchange"
+                                            title="Incoming Stock Moves"/>
+                                    <field name="scrap_qty" optional="show"/>
+                                    <field name="net_demand" optional="show"/>
+                                    <field name="demand_adjustment_qty" optional="show"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Components Demand Calculation" name="reorder_component_demand"
+                              invisible="not component_demand_line_ids">
+                            <field name="component_demand_line_ids" nolabel="1"
+                                   readonly="state in ['done', 'cancel', 'verified']">
+                                <list string="Component Demand" create="false" delete="false">
+                                    <field name="product_id" readonly="1"/>
+                                    <field name="available_qty" readonly="1" optional="show"/>
+                                    <field name="required_qty" readonly="1" optional="show"/>
+                                    <button name="action_view_source_products"
+                                            type="object"
+                                            title="Source Products"
+                                            icon="fa-sitemap"/>
+                                    <field name="incoming_qty" readonly="1" optional="show"/>
+                                    <button class="oe_stat_button oe_inline"
+                                            name="action_incoming_stock_moves"
+                                            type="object"
+                                            icon="fa-exchange"
+                                            title="Incoming Stock Moves"/>
+                                    <field name="scrap_qty" optional="show"/>
+                                    <field name="net_demand" readonly="1" optional="show"/>
+                                    <field name="demand_adjustment_qty" optional="show"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="By Product" name="reorder_by_product"
+                              invisible="not by_product_line_ids">
+                            <field name="by_product_line_ids" nolabel="1" readonly="1">
+                                <list string="By Product" create="false" delete="false">
+                                    <field name="source_product_id"/>
+                                    <field name="product_id"/>
+                                    <field name="source_product_demand"/>
+                                    <field name="quantity"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Summary" name="summary_lines"
                               invisible="not summary_ids">
                             <field name="summary_ids" nolabel="1">

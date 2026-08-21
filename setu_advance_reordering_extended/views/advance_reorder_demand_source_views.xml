@@ -8,6 +8,8 @@
             <list create="0" delete="0" edit="0">
                 <field name="component_demand_line_id" column_invisible="1"/>
                 <field name="to_be_produced_demand_line_id" column_invisible="1"/>
+                <field name="productwise_component_demand_line_id" column_invisible="1"/>
+                <field name="productwise_to_be_produced_demand_line_id" column_invisible="1"/>
                 <field name="source_product_id"/>
                 <field name="bom_id"/>
                 <field name="source_qty"/>

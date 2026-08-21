@@ -14,6 +14,16 @@ class AdvanceReorderComponentDemandSource(models.Model):
         comodel_name='advance.reorder.to.be.produced.line',
         string="To Be Produced Line"
     )
+    productwise_component_demand_line_id = fields.Many2one(
+        comodel_name='advance.reorder.productwise.component.demand.line',
+        string='Product-Wise Component Line',
+        ondelete='cascade',
+    )
+    productwise_to_be_produced_demand_line_id = fields.Many2one(
+        comodel_name='advance.reorder.productwise.produced.demand.line',
+        string='Product-Wise To Be Produced Line',
+        ondelete='cascade',
+    )
 
     source_product_id = fields.Many2one(
         comodel_name='product.product',
