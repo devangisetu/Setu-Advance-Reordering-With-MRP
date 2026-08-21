@@ -224,7 +224,7 @@ class AdvanceReorderPlanner(models.Model):
                 'vendor_id': vendor_id.id,
                 'user_id': self.user_id.id,
                 'reorder_date': datetime.now(),
-                'vendor_selection_strategy': 'on_po_creation' if self.vendor_selection_strategy == 'without_vendor' else self.vendor_selection_strategy,
+                'vendor_selection_strategy': 'on_po_creation' if self.vendor_selection_strategy == 'without_vendor' else 'specific_vendor',
                 'buffer_security_days': self.buffer_security_days,
                 'generate_demand_with': self.generate_demand_with,
                 'sales_start_date': datetime.today().date() - timedelta(days=self.past_days),

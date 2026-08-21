@@ -98,14 +98,18 @@
             </xpath>
 
             <xpath expr="//page[@name='reorder_lines']//field[@name='transit_time_sales']" position="before">
-                <field name="sales_qty" optional="show"/>
-                <field name="sales_return_qty" optional="hide"/>
-                <field name="consumed_qty" optional="show"/>
+                <field name="sales_qty" optional="show"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                <field name="sales_return_qty" optional="hide"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                <field name="consumed_qty" optional="show"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
                 <field name="resupply_qty" optional="show"
-                       column_invisible="parent.show_subcontracting_qty == False"/>
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or parent.show_subcontracting_qty == False"/>
                 <field name="resupply_return_qty" optional="hide"
-                       column_invisible="parent.show_subcontracting_qty == False"/>
-                <field name="scrap_qty" optional="show" column_invisible="not parent.show_scrap_qty"/>
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or parent.show_subcontracting_qty == False"/>
+                <field name="scrap_qty" optional="show"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or not parent.show_scrap_qty"/>
             </xpath>
 
             <page name="reorder_summary" position="before">
