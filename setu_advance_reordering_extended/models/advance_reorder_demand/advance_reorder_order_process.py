@@ -202,6 +202,20 @@ class AdvanceReorderOrderProcess(models.Model):
             record.has_purchase_action_summary = 'purchase' in actions
             record.has_production_action_summary = 'production' in actions
 
+    def _are_all_order_actions_done(self):
+        """Return True when every required summary action (PO/MO) has been generated."""
+        self.ensure_one()
+        actions = set(self.summary_ids.mapped('order_action'))
+        purchase_done = bool(self.purchase_ids) if 'purchase' in actions else True
+        production_done = bool(self.production_ids) if 'production' in actions else True
+        return purchase_done and production_done
+
+    def _update_state_after_order_creation(self):
+        """Mark reorder done only when all required PO/MO actions are complete."""
+        for record in self:
+            if record.state == 'verified' and record._are_all_order_actions_done():
+                record.write({'state': 'done'})
+
     def _get_warehouse_qty_summary(self, product, warehouses):
         """Calculates the total available, incoming, and outgoing quantities across the selected warehouses."""
         wh_available = sum(
@@ -1198,6 +1212,10 @@ class AdvanceReorderOrderProcess(models.Model):
     def action_create_reorder_purchase_order(self):
         """Creates purchase orders from purchase summary lines based on the vendor selection strategy."""
         self.ensure_one()
+        if self.purchase_ids:
+            raise UserError(_(
+                'Purchase orders have already been created for this reorder process.'
+            ))
         purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
@@ -1226,7 +1244,7 @@ class AdvanceReorderOrderProcess(models.Model):
                 )
 
         if self.purchase_ids:
-            self.write({'state': 'done'})
+            self._update_state_after_order_creation()
         return True
 
     def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
@@ -1393,6 +1411,7 @@ class AdvanceReorderOrderProcess(models.Model):
             ))
 
         Production.create(mo_vals_list)
+        self._update_state_after_order_creation()
         return True
 
     def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse, mo_bom_wise_data):

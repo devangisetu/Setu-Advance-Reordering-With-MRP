@@ -37,7 +37,7 @@
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="attributes">
-                <attribute name="invisible">state != 'verified' or not has_purchase_action_summary</attribute>
+                <attribute name="invisible">state != 'verified' or not has_purchase_action_summary or purchase_count > 0</attribute>
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="after">

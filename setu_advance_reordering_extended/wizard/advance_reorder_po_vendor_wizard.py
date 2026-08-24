@@ -86,10 +86,52 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         """Confirm wizard and create purchase orders."""
         self.ensure_one()
         if self.product_wise_reorder_id:
-            return self._action_confirm_product_wise()
-        return super().action_confirm()
+            return self._action_confirm_product_wise_reorder_process()
+        return self._action_confirm_reorder_process()
 
-    def _action_confirm_product_wise(self):
+    def _action_confirm_reorder_process(self):
+        """Create POs for reorder-with-real-demand; mark done only when all actions are done."""
+        self.ensure_one()
+        reorder = self.reorder_process_id
+        if not reorder:
+            raise UserError(_('No reorder found to create purchase orders.'))
+        if not reorder.summary_ids.filtered(lambda summary: summary.order_action == 'purchase'):
+            raise UserError(_('There are no summary lines to purchase.'))
+        if reorder.purchase_ids:
+            raise UserError(_(
+                'Purchase orders have already been created for this reorder process.'
+            ))
+        for line in self.line_ids:
+            if not line.vendor_id:
+                raise UserError(
+                    _('Please select a vendor for product %s.') % (line.product_id.display_name,)
+                )
+        po_before = len(reorder.purchase_ids)
+        for config in reorder.config_ids:
+            default_wh = config.default_warehouse_id
+            wh_group = config.warehouse_group_id
+            vendor_to_summary_ids = defaultdict(list)
+            for wline in self.line_ids:
+                summary = wline.summary_line_id
+                if not summary or not wline.vendor_id:
+                    continue
+                vendor_to_summary_ids[wline.vendor_id].append(summary.id)
+            for vendor, sum_ids in vendor_to_summary_ids.items():
+                summaries = self.env['advance.reorder.orderprocess.summary'].browse(sum_ids)
+                if summaries:
+                    reorder.create_purchase_order(
+                        default_wh, wh_group, partner=vendor, summary_lines=summaries
+                    )
+        if len(reorder.purchase_ids) == po_before:
+            raise UserError(_(
+                'No purchase orders were created. Check that products have demand for the '
+                'configured warehouse groups and that the selected vendors have supplier '
+                'pricelist lines on those products.'
+            ))
+        reorder._update_state_after_order_creation()
+        return {'type': 'ir.actions.act_window_close'}
+
+    def _action_confirm_product_wise_reorder_process(self):
         """Create POs from product-wise summaries and selected warehouse."""
         self.ensure_one()
         if not self.warehouse_id:
