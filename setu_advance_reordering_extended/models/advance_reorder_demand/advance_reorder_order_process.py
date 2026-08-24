@@ -1475,3 +1475,44 @@ class AdvanceReorderOrderProcess(models.Model):
                 action['views'] = form_view
             action['res_id'] = productions.id
         return action
+
+    def create_warehouse_replenishment(self):
+        """Create replenishment with products that have Generate Purchase Orders in summary."""
+        replenishment_obj = self.env['advance.procurement.process']
+        created = False
+        for config_id in self.config_ids:
+            purchase_summaries = self.summary_ids.filtered(
+                lambda summary: summary.order_action == 'purchase'
+                and summary.warehouse_group_id.id == config_id.warehouse_group_id.id
+            )
+            product_ids = purchase_summaries.mapped('product_id').ids
+            if not product_ids:
+                continue
+            vals = {
+                'warehouse_id': config_id.default_warehouse_id.id,
+                'procurement_date': datetime.today(),
+                'user_id': self.user_id.id,
+                'buffer_stock_days': self.buffer_security_days,
+                'generate_demand_with': self.generate_demand_with,
+                'history_sale_start_date': self.sales_start_date,
+                'history_sale_end_date': self.sales_end_date,
+                'procurement_demand_growth': self.reorder_demand_growth,
+                'config_ids': [(0, 0, {'warehouse_id': warehouse.id}) for warehouse in
+                               config_id.warehouse_group_id.warehouse_ids],
+                'product_ids': [(6, 0, product_ids)],
+                'reorder_id': self.id,
+                'company_id': self.company_id.id,
+            }
+            replenishment = replenishment_obj.create(vals)
+            for config in replenishment.config_ids:
+                config.onchange_warehouse_id()
+                config.onchange_transit_days()
+                config.onchange_shipment_arrival_date()
+            replenishment.onchange_buffer_security_days()
+            created = True
+        if not created:
+            raise UserError(_(
+                'No summary lines with Generate Purchase Orders action found '
+                'to create warehouse replenishment.'
+            ))
+        return True

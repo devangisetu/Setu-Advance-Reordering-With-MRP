@@ -75,6 +75,9 @@
                             invisible="state in ['verified', 'approved', 'done', 'no_data', 'cancel']"/>
                     <button name="action_reorder_reset_to_draft" type="object" string="Reset to Draft"
                             invisible="state != 'cancel'"/>
+                    <button name="create_warehouse_replenishment" string="Create Warehouse Replenishment"
+                            type="object"
+                            invisible="state != 'done' or replenishment_count > 0"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="draft,inprogress,verified,done,cancel"/>
                 </header>
@@ -82,6 +85,7 @@
                     <div class="oe_button_box" name="button_box">
                         <field name="purchase_count" invisible="1"/>
                         <field name="production_count" invisible="1"/>
+                        <field name="replenishment_count" invisible="1"/>
                         <field name="has_purchase_action_summary" invisible="1"/>
                         <field name="has_production_action_summary" invisible="1"/>
                         <field name="fg_count" invisible="1"/>
@@ -100,6 +104,13 @@
                                 icon="fa-wrench"
                                 invisible="production_count == 0">
                             <field name="production_count" widget="statinfo" string="Manufacturing Orders"/>
+                        </button>
+                        <button type="object"
+                                name="action_replenishment_count"
+                                class="oe_stat_button"
+                                icon="fa-truck"
+                                invisible="replenishment_count == 0">
+                            <field name="replenishment_count" widget="statinfo" string="Replenishment"/>
                         </button>
                         <button type="object"
                                 name="action_view_fg"

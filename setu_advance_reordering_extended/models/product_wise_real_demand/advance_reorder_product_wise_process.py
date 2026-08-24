@@ -166,6 +166,15 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Manufacturing order count',
         compute='_compute_production_count',
     )
+    replenishment_ids = fields.One2many(
+        'advance.procurement.process',
+        'product_wise_reorder_id',
+        string='Replenishment Order',
+    )
+    replenishment_count = fields.Integer(
+        string='Replenishment count',
+        compute='_compute_count_replenishment',
+    )
     has_purchase_action_summary = fields.Boolean(
         string='Has Purchase Action',
         compute='_compute_summary_action_flags',
@@ -234,6 +243,11 @@ class AdvanceReorderProductRealDemand(models.Model):
         """Count linked manufacturing orders."""
         for record in self:
             record.production_count = len(record.production_ids)
+
+    def _compute_count_replenishment(self):
+        """Count linked warehouse replenishment records."""
+        for record in self:
+            record.replenishment_count = len(record.replenishment_ids)
 
     def _get_demand_lines_by_classification(self, classification):
         """Return demand lines matching reorder product classification."""
@@ -1820,3 +1834,80 @@ class AdvanceReorderProductRealDemand(models.Model):
                 action['views'] = form_view
             action['res_id'] = productions.id
         return action
+
+    def action_replenishment_count(self):
+        """Open linked warehouse replenishment records."""
+        self.ensure_one()
+        action = self.env['ir.actions.actions']._for_xml_id(
+            'setu_advance_reordering.actions_advance_procurement_process'
+        )
+        replenishment = self.mapped('replenishment_ids')
+        if len(replenishment) > 1:
+            action['domain'] = [('id', 'in', replenishment.ids)]
+        elif replenishment:
+            form_view = [(
+                self.env.ref('setu_advance_reordering.form_advance_procurement_process').id,
+                'form',
+            )]
+            if 'views' in action:
+                action['views'] = form_view + [
+                    (state, view) for state, view in action['views'] if view != 'form'
+                ]
+            else:
+                action['views'] = form_view
+            action['res_id'] = replenishment.id
+        return action
+
+    def _get_replenishment_destination_warehouse(self, warehouses):
+        """Resolve destination warehouse for product-wise replenishment."""
+        self.ensure_one()
+        if self.purchase_ids:
+            destination = self.purchase_ids[0].picking_type_id.warehouse_id
+            if destination:
+                return destination
+        return warehouses[:1]
+
+    def create_warehouse_replenishment(self):
+        """Create replenishment with products that have Generate Purchase Orders in summary."""
+        self.ensure_one()
+        if self.replenishment_ids:
+            raise UserError(_(
+                'Warehouse replenishment has already been created for this product-wise demand.'
+            ))
+        purchase_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'purchase'
+        )
+        product_ids = purchase_summaries.mapped('product_id').ids
+        if not product_ids:
+            raise UserError(_(
+                'No summary lines with Generate Purchase Orders action found '
+                'to create warehouse replenishment.'
+            ))
+
+        warehouses = self._get_company_warehouses()
+        destination = self._get_replenishment_destination_warehouse(warehouses)
+        if not destination:
+            raise UserError(_(
+                'No warehouse found to create warehouse replenishment.'
+            ))
+
+        replenishment = self.env['advance.procurement.process'].create({
+            'warehouse_id': destination.id,
+            'procurement_date': datetime.today(),
+            'user_id': self.user_id.id,
+            'buffer_stock_days': self.buffer_security_days,
+            'generate_demand_with': 'history_sales',
+            'history_sale_start_date': self.sales_start_date,
+            'history_sale_end_date': self.sales_end_date,
+            'procurement_demand_growth': self.reorder_demand_growth,
+            'config_ids': [(0, 0, {'warehouse_id': warehouse.id}) for warehouse in warehouses],
+            'product_ids': [(6, 0, product_ids)],
+            'product_wise_reorder_id': self.id,
+            'company_id': self.company_id.id,
+        })
+        for config in replenishment.config_ids:
+            config.onchange_warehouse_id()
+            config.onchange_transit_days()
+            config.onchange_shipment_arrival_date()
+        replenishment.onchange_buffer_security_days()
+        return True

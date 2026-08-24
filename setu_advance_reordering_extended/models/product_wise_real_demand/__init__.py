@@ -8,3 +8,4 @@ from . import advance_reorder_productwise_produced_demand_line
 from . import advance_reorder_productwise_by_product_line
 from . import purchase_order
 from . import mrp_production
+from . import advance_procurement_process
