@@ -115,6 +115,8 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                 summary = wline.summary_line_id
                 if not summary or not wline.vendor_id:
                     continue
+                if summary.warehouse_group_id and summary.warehouse_group_id != wh_group:
+                    continue
                 vendor_to_summary_ids[wline.vendor_id].append(summary.id)
             for vendor, sum_ids in vendor_to_summary_ids.items():
                 summaries = self.env['advance.reorder.orderprocess.summary'].browse(sum_ids)

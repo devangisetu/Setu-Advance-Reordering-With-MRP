@@ -77,8 +77,12 @@ class AdvanceReorderToBeProducedLine(models.Model):
     def action_incoming_stock_moves(self):
         """Opens the pending incoming stock moves for the product across the reorder process warehouses."""
         self.ensure_one()
-        warehouse_groups = self.reorder_process_id.config_ids.mapped('warehouse_group_id')
-        stock_location_ids = warehouse_groups.mapped('warehouse_ids.lot_stock_id').ids
+        warehouses = (
+            self.warehouse_group_id.warehouse_ids
+            if self.warehouse_group_id
+            else self.reorder_process_id.config_ids.mapped('warehouse_group_id.warehouse_ids')
+        )
+        stock_location_ids = warehouses.mapped('lot_stock_id').ids
         move_ids = self.env['stock.move'].search([
             ('product_id', '=', self.product_id.id),
             ('state', 'not in', ['draft', 'cancel', 'done']),
