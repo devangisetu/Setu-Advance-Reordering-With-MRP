@@ -22,18 +22,34 @@ class ManufacturingOrderWizardLine(models.TransientModel):
         compute='_compute_summary_fields',
         store=True,
     )
-
+    warehouse_group_id = fields.Many2one(
+        'stock.warehouse.group',
+        string='Warehouse group',
+        compute='_compute_summary_fields',
+        store=True,
+    )
     order_qty = fields.Integer(
         string='Order Quantity',
         compute='_compute_summary_fields',
         store=True,
     )
 
-    @api.depends('summary_line_id', 'summary_line_id.product_id', 'summary_line_id.order_qty',
-                 'product_wise_summary_line_id', 'product_wise_summary_line_id.product_id',
-                 'product_wise_summary_line_id.order_qty')
+    @api.depends(
+        'summary_line_id',
+        'summary_line_id.product_id',
+        'summary_line_id.order_qty',
+        'summary_line_id.warehouse_group_id',
+        'product_wise_summary_line_id',
+        'product_wise_summary_line_id.product_id',
+        'product_wise_summary_line_id.order_qty',
+    )
     def _compute_summary_fields(self):
         for line in self:
             summary = line.summary_line_id or line.product_wise_summary_line_id
             line.product_id = summary.product_id if summary else False
             line.order_qty = summary.order_qty if summary else 0
+            line.warehouse_group_id = (
+                line.summary_line_id.warehouse_group_id
+                if line.summary_line_id
+                else False
+            )

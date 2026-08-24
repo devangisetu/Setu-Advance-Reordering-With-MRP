@@ -1456,6 +1456,28 @@ class AdvanceReorderOrderProcess(models.Model):
             'context': dict(self.env.context),
         }
 
+    def _get_merged_mo_bom_wise_data(self, production_summaries):
+        """Merge BOM-wise MO counts from all configured warehouse groups."""
+        mo_bom_wise_data = {}
+        for config in self.config_ids:
+            config_summaries = production_summaries.filtered(
+                lambda summary: summary.warehouse_group_id == config.warehouse_group_id
+            )
+            if not config_summaries:
+                continue
+            product_ids = config_summaries.mapped('product_id')
+            if not product_ids:
+                continue
+            for product_id, bom_counts in self._get_bom_wise_mo_count(
+                    config.warehouse_group_id, product_ids
+            ).items():
+                mo_bom_wise_data.setdefault(product_id, {})
+                for bom_id, count in bom_counts.items():
+                    mo_bom_wise_data[product_id][bom_id] = (
+                        mo_bom_wise_data[product_id].get(bom_id, 0) + count
+                    )
+        return mo_bom_wise_data
+
     def create_manufacturing_orders(self, warehouse_id):
         """Creates manufacturing orders from verified production summary lines."""
         self.ensure_one()
@@ -1466,58 +1488,56 @@ class AdvanceReorderOrderProcess(models.Model):
         if self.production_ids:
             raise UserError(_('Manufacturing orders have already been created for this reorder process.'))
 
-        Production = self.env['mrp.production'].with_user(self.user_id).with_company(self.company_id)
-        mo_vals_list = []
-        all_production_summaries = production_summaries
-
-        for config in self.config_ids:
-            config_production_summaries = all_production_summaries.filtered(
-                lambda summary: summary.warehouse_group_id.id == config.warehouse_group_id.id
-            )
-            if not config_production_summaries:
-                continue
-
-            mo_bom_wise_data = self._get_bom_wise_mo_count(
-                config.warehouse_group_id, config_production_summaries.mapped('product_id')
-            )
-            mo_vals_list.extend(
-                self._prepare_manufacturing_order_vals_from_summary(
-                    config_production_summaries, warehouse_id, mo_bom_wise_data
-                )
-            )
-
+        mo_vals_list = self._prepare_manufacturing_order_vals_from_summary(
+            production_summaries,
+            warehouse_id,
+            self._get_merged_mo_bom_wise_data(production_summaries),
+        )
         if not mo_vals_list:
             raise UserError(_(
                 'No manufacturing orders to create. '
             ))
 
-        Production.create(mo_vals_list)
+        self.env['mrp.production'].with_user(self.user_id).with_company(self.company_id).create(mo_vals_list)
         self._update_state_after_order_creation()
         return True
 
-    def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse, mo_bom_wise_data):
-        """Prepares manufacturing order values from production summary lines based on BOM ratio demand."""
-        mo_vals_list = []
+    def _get_merged_production_qty_by_product(self, production_summaries):
+        """Merge manufacturing qty of the same product from all warehouse groups."""
+        qty_by_product = defaultdict(float)
+        product_by_id = {}
         for summary_line in production_summaries:
             product = summary_line.product_id
-            picking_type = warehouse.manu_type_id
-            if not picking_type:
-                raise UserError(_(
-                    'No manufacturing operation type configured for warehouse %s.',
-                    warehouse.display_name,
-                ))
+            if not product or summary_line.order_qty <= 0:
+                continue
+            product_by_id[product.id] = product
+            qty_by_product[product.id] += summary_line.order_qty
+        return product_by_id, qty_by_product
 
+    def _prepare_manufacturing_order_vals_from_summary(self, production_summaries, warehouse, mo_bom_wise_data):
+        """Prepare one manufacturing order per product for the selected warehouse."""
+        picking_type = warehouse.manu_type_id
+        if not picking_type:
+            raise UserError(_(
+                'No manufacturing operation type configured for warehouse %s.',
+                warehouse.display_name,
+            ))
+
+        product_by_id, qty_by_product = self._get_merged_production_qty_by_product(production_summaries)
+        mo_vals_list = []
+        for product_id, order_qty in qty_by_product.items():
+            product = product_by_id[product_id]
             bom_wise_demand = False
             if not self.calculate_demand_based_on_selected_bom:
                 bom_wise_demand = self._get_bom_wise_demand_by_mo_ratio(
                     product,
-                    summary_line.order_qty,
+                    order_qty,
                     mo_bom_wise_data=mo_bom_wise_data,
                 )
 
             if not bom_wise_demand:
                 default_bom = self._get_product_bom(product)
-                bom_wise_demand = [(default_bom, summary_line.order_qty)] if default_bom else []
+                bom_wise_demand = [(default_bom, order_qty)] if default_bom else []
 
             if not bom_wise_demand:
                 _logger.warning(
@@ -1525,6 +1545,7 @@ class AdvanceReorderOrderProcess(models.Model):
                     product.display_name,
                     product.id,
                 )
+                continue
 
             for bom, qty in bom_wise_demand:
                 mo_vals_list.append({
