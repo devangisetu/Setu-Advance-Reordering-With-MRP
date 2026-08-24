@@ -22,7 +22,7 @@
     </record>
 
     <!-- Advance Procurement Process(Replenishment from warehouse) -->
-    <record id="stock_warehouse_group_company_rule" model="ir.rule">
+    <record id="advance_procurement_process_company_rule" model="ir.rule">
         <field name="name">Advance Procurement Process - Company</field>
         <field name="model_id" ref="model_advance_procurement_process"/>
         <field name="domain_force">[('company_id', 'in', company_ids + [False])]</field>
