@@ -56,8 +56,10 @@
                         </div>
                         <group>
                             <group readonly="state != 'draft'">
-                                <field name="warehouse_id" required="1"/>
-                                <field name="procurement_date" required="1"/>
+                                <field name="company_id" required="1" readonly="state != 'draft'"/>
+                                <field name="warehouse_id" required="1" readonly="state != 'draft'"
+                                       domain="[('company_id', '=', company_id)]"/>
+                                <field name="procurement_date" required="1" readonly="state != 'draft'"/>
                                 <field name="user_id" readonly="1"/>
                                 <!--                                <field name="approve_id"/>-->
                             </group>
@@ -120,8 +122,7 @@
                                                        invisible="not inter_warehouse_channel_id"/>
                                             </group>
                                             <group>
-<!--                                                <field name="warehouse_ids" invisible="1"/>-->
-                                                <field name="warehouse_id" />
+                                                <field name="warehouse_id"/>
                                                 <field name="procurement_process_id" invisible="1"/>
                                                 <field name="advance_stock_start_date"/>
                                                 <field name="advance_stock_end_date"/>
@@ -320,10 +321,10 @@
                         </notebook>
                     </sheet>
                     <chatter reload_on_follower="True"/>
-<!--                    <div class="oe_chatter">-->
-<!--                        <field name="message_follower_ids"/>-->
-<!--                        <field name="message_ids"/>-->
-<!--                    </div>-->
+                    <!--                    <div class="oe_chatter">-->
+                    <!--                        <field name="message_follower_ids"/>-->
+                    <!--                        <field name="message_ids"/>-->
+                    <!--                    </div>-->
                 </form>
             </field>
         </record>

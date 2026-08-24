@@ -91,6 +91,7 @@ class AdvanceProcurementProcess(models.Model):
                                                      'procurement_process_id',
                                                      string='Reorder Stock Movement')
     reorder_id = fields.Many2one('advance.reorder.orderprocess', string='Reorder Id')
+    company_id = fields.Many2one(comodel_name='res.company', string='Company', default=lambda self: self.env.company,)
 
     @api.constrains('config_ids')
     def _check_exist_warehouse_in_line(self):
