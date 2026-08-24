@@ -1,0 +1,23 @@
+# -*- coding: utf-8 -*-
+from odoo import fields, models, api, _
+
+
+class AdvanceProcurementProcessLine(models.Model):
+    _inherit = 'advance.procurement.process.line'
+
+    sales_qty = fields.Float(
+        string='Sales Qty',
+        help='Total sales quantity for the selected period.',
+    )
+    sales_return_qty = fields.Float(
+        string='Sales Return Qty',
+        help='Total sales return quantity for the selected period.',
+    )
+    consumed_qty = fields.Float(
+        string='Consumed Qty',
+        help='Total production consumption quantity for the selected period '
+             '(non-zero for production_driven / combined planning types).',
+    )
+    resupply_qty = fields.Float(string='Resupply Qty', )
+    resupply_return_qty = fields.Float(string='Resupply Return Qty', )
+    scrap_qty = fields.Float(string='Scraped Qty', )

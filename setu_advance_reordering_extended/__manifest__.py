@@ -40,6 +40,7 @@
         'wizard/advance_reorder_po_vendor_wizard_views.xml',
         'views/advance_reorder_demand_source_views.xml',
         'views/advance_reorder_order_process_views.xml',
+        'views/advance_procurement_process_views.xml',
         'views/advance_reorder_product_wise_process_views.xml',
         'views/res_config_settings_views.xml',
         'views/stock_warehouse_orderpoint.xml',

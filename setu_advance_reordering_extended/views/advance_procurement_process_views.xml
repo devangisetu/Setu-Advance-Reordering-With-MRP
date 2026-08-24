@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="form_advance_procurement_process_extended" model="ir.ui.view">
+        <field name="name">advance.procurement.process.form.extended</field>
+        <field name="model">advance.procurement.process</field>
+        <field name="inherit_id" ref="setu_advance_reordering.form_advance_procurement_process"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='generate_demand_with']" position="after">
+                <field name="show_subcontracting_qty" invisible="1"/>
+                <field name="show_scrap_qty" invisible="1"/>
+            </xpath>
+            <xpath expr="//page[@name='procurement_lines']//field[@name='line_ids']/list/field[@name='transit_time_sales']"
+                   position="before">
+                <field name="sales_qty" optional="show" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                <field name="sales_return_qty" optional="hide" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                <field name="consumed_qty" optional="show" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales'"/>
+                <field name="resupply_qty" optional="show" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or parent.show_subcontracting_qty == False"/>
+                <field name="resupply_return_qty" optional="hide" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or parent.show_subcontracting_qty == False"/>
+                <field name="scrap_qty" optional="show" readonly="1"
+                       column_invisible="parent.generate_demand_with == 'forecast_sales' or not parent.show_scrap_qty"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
