@@ -122,6 +122,36 @@ class AdvanceReorderOrderProcess(models.Model):
             comp_count = len(record.component_demand_line_ids)
             record.component_count = line_count + comp_count
 
+    @api.depends('summary_ids', 'summary_ids.order_action')
+    def _compute_summary_action_flags(self):
+        """Computes whether the summary contains purchase/production/subcontract actions."""
+        for record in self:
+            actions = set(record.summary_ids.mapped('order_action'))
+            record.has_purchase_action_summary = 'purchase' in actions
+            record.has_production_action_summary = 'production' in actions
+            record.has_subcontracting_action_summary = 'subcontracting' in actions
+
+    @api.depends(
+        'summary_ids',
+        'summary_ids.order_action',
+        'summary_ids.is_action_done',
+    )
+    def _compute_action_done_flags(self):
+        """Track whether all purchase/subcontracting summary lines are marked done."""
+        for record in self:
+            purchase_summaries = record.summary_ids.filtered(
+                lambda summary: summary.order_action == 'purchase'
+            )
+            record.is_purchase_action_done = bool(purchase_summaries) and all(
+                purchase_summaries.mapped('is_action_done')
+            )
+            subcontract_summaries = record.summary_ids.filtered(
+                lambda summary: summary.order_action == 'subcontracting'
+            )
+            record.is_subcontracting_created = bool(subcontract_summaries) and all(
+                subcontract_summaries.mapped('is_action_done')
+            )
+
     def action_view_fg(self):
         """Opens the Finished Goods (FG) demand calculation lines."""
         self.ensure_one()
@@ -207,55 +237,6 @@ class AdvanceReorderOrderProcess(models.Model):
             'target': 'current',
         }
 
-    @api.depends('summary_ids', 'summary_ids.order_action')
-    def _compute_summary_action_flags(self):
-        """Computes whether the summary contains purchase/production/subcontract actions."""
-        for record in self:
-            actions = set(record.summary_ids.mapped('order_action'))
-            record.has_purchase_action_summary = 'purchase' in actions
-            record.has_production_action_summary = 'production' in actions
-            record.has_subcontracting_action_summary = 'subcontracting' in actions
-
-    @api.depends(
-        'summary_ids',
-        'summary_ids.order_action',
-        'summary_ids.is_action_done',
-    )
-    def _compute_action_done_flags(self):
-        """Track whether all purchase/subcontracting summary lines are marked done."""
-        for record in self:
-            purchase_summaries = record.summary_ids.filtered(
-                lambda summary: summary.order_action == 'purchase'
-            )
-            record.is_purchase_action_done = bool(purchase_summaries) and all(
-                purchase_summaries.mapped('is_action_done')
-            )
-            subcontract_summaries = record.summary_ids.filtered(
-                lambda summary: summary.order_action == 'subcontracting'
-            )
-            record.is_subcontracting_created = bool(subcontract_summaries) and all(
-                subcontract_summaries.mapped('is_action_done')
-            )
-
-    def _are_all_order_actions_done(self):
-        """Return True when all summary actions are done."""
-        self.ensure_one()
-
-        return bool(self.summary_ids) and all(
-            self.summary_ids.mapped('is_action_done')
-        )
-
-    def _mark_summary_lines_done(self, summaries):
-        """Mark summary lines as done after their documents are created."""
-        summaries = summaries.filtered(lambda summary: not summary.is_action_done)
-        if summaries:
-            summaries.write({'is_action_done': True})
-
-    def _update_state_after_order_creation(self):
-        """Mark reorder done only when all required order actions are complete."""
-        for record in self:
-            if record.state == 'verified' and record._are_all_order_actions_done():
-                record.write({'state': 'done'})
 
     def _get_warehouse_qty_summary(self, product, warehouses):
         """Calculates the total available, incoming, and outgoing quantities across the selected warehouses."""
@@ -596,8 +577,6 @@ class AdvanceReorderOrderProcess(models.Model):
                     sales_data, production_data, resupply_data, scrap_data
                 )
             else:
-                # Forecast sales already has lead/coverage demand; keep it as-is
-                # so MRP tabs (component / to-be-produced / by-product) get qty.
                 demand_data = sales_data
             vals.extend(
                 self.prepare_reorder_line_vals(config, demand_data, is_mto_route=False))
@@ -1259,6 +1238,26 @@ class AdvanceReorderOrderProcess(models.Model):
             tab_lines=self.component_demand_line_ids,
             order_action="purchase",
         )
+
+    def _are_all_order_actions_done(self):
+        """Return True when all summary actions are done."""
+        self.ensure_one()
+
+        return bool(self.summary_ids) and all(
+            self.summary_ids.mapped('is_action_done')
+        )
+
+    def _mark_summary_lines_done(self, summaries):
+        """Mark summary lines as done after their documents are created."""
+        summaries = summaries.filtered(lambda summary: not summary.is_action_done)
+        if summaries:
+            summaries.write({'is_action_done': True})
+
+    def _update_state_after_order_creation(self):
+        """Mark reorder done only when all required order actions are complete."""
+        for record in self:
+            if record.state == 'verified' and record._are_all_order_actions_done():
+                record.write({'state': 'done'})
 
     def get_vendor_product_mapping_dict(self, purchase_summaries):
         """Groups products by vendor according to the selected vendor selection strategy."""
