@@ -23,6 +23,13 @@ class ManufacturingOrderWizard(models.TransientModel):
     warehouse_id = fields.Many2one(
         'stock.warehouse',
         string='Warehouse',
+        domain="[('id', 'in', allowed_warehouse_ids)]",
+    )
+    allowed_warehouse_ids = fields.Many2many(
+        'stock.warehouse',
+        compute='_compute_allowed_warehouse_ids',
+        string='Allowed Warehouses',
+        store=True,
     )
 
     line_ids = fields.One2many(
@@ -30,6 +37,28 @@ class ManufacturingOrderWizard(models.TransientModel):
         'wizard_id',
         string='Products',
     )
+
+    @api.depends(
+        'reorder_process_id',
+        'reorder_process_id.config_ids.warehouse_group_id',
+        'reorder_process_id.config_ids.warehouse_group_id.warehouse_ids',
+        'product_wise_reorder_id',
+        'company_id',
+    )
+    def _compute_allowed_warehouse_ids(self):
+        """Limit warehouses to those in the reorder configuration warehouse groups."""
+        Warehouse = self.env['stock.warehouse']
+        for rec in self:
+            if rec.reorder_process_id:
+                rec.allowed_warehouse_ids = rec.reorder_process_id.config_ids.mapped(
+                    'warehouse_group_id.warehouse_ids'
+                )
+            elif rec.product_wise_reorder_id and rec.company_id:
+                rec.allowed_warehouse_ids = Warehouse.search([
+                    ('company_id', '=', rec.company_id.id),
+                ])
+            else:
+                rec.allowed_warehouse_ids = Warehouse
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -68,6 +97,10 @@ class ManufacturingOrderWizard(models.TransientModel):
         """Validates the warehouse selection and creates manufacturing orders for the reorder."""
         if not self.warehouse_id:
             raise UserError(_("Please select a warehouse to create manufacturing orders."))
+        if self.warehouse_id not in self.allowed_warehouse_ids:
+            raise UserError(_(
+                "Selected warehouse must belong to a warehouse group set in the reorder configuration."
+            ))
         if self.reorder_process_id:
             self.reorder_process_id.create_manufacturing_orders(self.warehouse_id)
         elif self.product_wise_reorder_id:

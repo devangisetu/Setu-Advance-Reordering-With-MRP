@@ -15,8 +15,9 @@
                                    invisible="not product_wise_reorder_id"/>
                         </group>
                         <group>
+                            <field name="allowed_warehouse_ids" invisible="1"/>
                             <field name="warehouse_id" required="1" options="{'no_create': True}"
-                                   domain="[('company_id', '=', company_id)]"/>
+                                   domain="[('id', 'in', allowed_warehouse_ids)]"/>
                         </group>
                     </group>
 
