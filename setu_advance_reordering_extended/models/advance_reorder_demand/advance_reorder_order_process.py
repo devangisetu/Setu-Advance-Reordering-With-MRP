@@ -963,26 +963,55 @@ class AdvanceReorderOrderProcess(models.Model):
                 or self.env['mrp.bom']
         )
 
-    def _get_subcontract_partner_for_product(self, product):
-        """Return the BOM subcontractor to use for a subcontract purchase order."""
-        self.ensure_one()
-        bom =  product.reorder_bom_id
-        if not bom or (bom and bom.type != 'subcontract'):
+    def _get_subcontract_bom_for_product(self, product):
+        """Return the subcontract BOM used to resolve subcontract vendors."""
+        bom = product.reorder_bom_id
+        if not bom or bom.type != 'subcontract':
             bom = product.bom_ids.filtered(
-                lambda bom: bom.type == 'subcontract' and bom.company_id == self.company_id
+                lambda bom_rec: bom_rec.type == 'subcontract'
+                and (not bom_rec.company_id or bom_rec.company_id == self.company_id)
             )[:1]
-        if not bom or not bom.subcontractor_ids:
+        return bom or self.env['mrp.bom']
+
+    def _get_subcontract_partner_for_product(self, product):
+        """Return the BOM subcontractor to use for a subcontract purchase order.
+
+        1. Single BOM subcontractor → use it.
+        2. Multiple → matching product sellers by vendor strategy
+           (On PO Creation uses seller sequence); else first BOM subcontractor.
+        """
+        self.ensure_one()
+        bom = self._get_subcontract_bom_for_product(product)
+        subcontractors = bom.subcontractor_ids
+        if not subcontractors:
             return self.env['res.partner']
-        seller = product.with_company(self.company_id)._select_seller(
+        if len(subcontractors) == 1:
+            return subcontractors
+
+        product_vendors = product.seller_ids.filtered(
+            lambda seller: not seller.company_id or seller.company_id == self.company_id
+        ).mapped('partner_id')
+        matching_sellers = subcontractors & product_vendors
+        if not matching_sellers:
+            return subcontractors[:1]
+        if len(matching_sellers) == 1:
+            return matching_sellers
+
+        strategy = self.vendor_selection_strategy
+        if strategy == 'specific_vendor' and self.vendor_id and self.vendor_id in matching_sellers:
+            return self.vendor_id
+        sort_by = strategy if strategy in ('sequence', 'price', 'delay') else 'sequence'
+        seller = product.with_company(self.company_id).with_context({
+            'sort_by': sort_by,
+            'op_company': self.company_id,
+        })._select_seller(
             quantity=None,
-            params={'subcontractor_ids': bom.subcontractor_ids},
+            params={'subcontractor_ids': matching_sellers},
         )
-        if seller and seller.partner_id:
-            return seller.partner_id
-        return bom.subcontractor_ids[:1]
+        return seller.partner_id if seller and seller.partner_id else matching_sellers[:1]
 
     def get_subcontracting_vendor_product_mapping_dict(self, subcontract_summaries):
-        """Group subcontract summary products by the subcontractor set on their BOM."""
+        """Group subcontract summary products by auto-resolved subcontractor vendor."""
         self.ensure_one()
         vendor_product_dict = {}
         products_without_subcontractor = self.env['product.product']
@@ -1059,12 +1088,16 @@ class AdvanceReorderOrderProcess(models.Model):
         return vendor_moq, purchase_qty, price
 
     def _get_order_action(self, product):
-        """Determines summary action from product storable flag, routes and classification.
+        """Determines summary action from BOM type, routes and classification.
 
-        Non-storable products get None; otherwise purchase or production.
+        Non-storable products get none; subcontract BOM → subcontracting;
+        otherwise purchase or production.
         """
         if not product or not product.is_storable:
             return 'none'
+
+        if self._get_subcontract_bom_for_product(product):
+            return 'subcontracting'
 
         route_names = set(product.route_ids.mapped('name'))
         if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
@@ -1259,8 +1292,11 @@ class AdvanceReorderOrderProcess(models.Model):
             if record.state == 'verified' and record._are_all_order_actions_done():
                 record.write({'state': 'done'})
 
-    def get_vendor_product_mapping_dict(self, purchase_summaries):
-        """Groups products by vendor according to the selected vendor selection strategy."""
+    def get_vendor_product_mapping_dict(self, purchase_summaries, order_action='purchase'):
+        """Groups products by vendor for purchase or subcontracting summaries."""
+        if order_action == 'subcontracting':
+            return self.get_subcontracting_vendor_product_mapping_dict(purchase_summaries)
+
         product_ids = purchase_summaries.mapped('product_id')
         vendor_product_dict = {}
         if self.vendor_selection_strategy == 'specific_vendor':
@@ -1305,35 +1341,27 @@ class AdvanceReorderOrderProcess(models.Model):
                 vendor_product_dict.setdefault(partner_id, []).append(product.id)
         return vendor_product_dict
 
-    def action_create_reorder_purchase_order(self):
-        """Creates purchase orders from purchase summary lines based on the vendor selection strategy."""
-        self.ensure_one()
-        if self.is_purchase_action_done:
-            raise UserError(_(
-                'Purchase orders have already been created for this reorder process.'
-            ))
-        purchase_summaries = self.summary_ids.filtered(
-            lambda summary: summary.order_action == 'purchase' and not summary.is_action_done
+    def _create_purchase_orders_from_vendor_mapping(self, summaries, order_action='purchase'):
+        """Create POs from vendor→product mapping for the given summary lines."""
+        vendor_product_dict = self.get_vendor_product_mapping_dict(
+            summaries, order_action=order_action
         )
-        if not purchase_summaries:
-            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
-
-        if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
-            return self.action_open_po_vendor_wizard()
-
-        vendor_product_dict = self.get_vendor_product_mapping_dict(purchase_summaries)
         processed_summaries = self.env['advance.reorder.orderprocess.summary']
-
         for vendor_id, product_list in vendor_product_dict.items():
             partner = self.env['res.partner'].browse(vendor_id)
-            vendor_summary_lines = purchase_summaries.filtered(
+            vendor_summary_lines = summaries.filtered(
                 lambda summary, products=product_list: summary.product_id.id in products
             )
-            if self.vendor_selection_strategy == 'specific_vendor' and \
-                    partner.vendor_rule in ['both', 'minimum_order_value'] and \
-                    self.reorder_amount < self.minimum_reorder_amount:
-                raise UserError(_("Can not create purchase order because reorder doesn't fulfil "
-                                  "vendor's minimum order amount's rule."))
+            if (
+                order_action == 'purchase'
+                and self.vendor_selection_strategy == 'specific_vendor'
+                and partner.vendor_rule in ['both', 'minimum_order_value']
+                and self.reorder_amount < self.minimum_reorder_amount
+            ):
+                raise UserError(_(
+                    "Can not create purchase order because reorder doesn't fulfil "
+                    "vendor's minimum order amount's rule."
+                ))
             for config_id in self.config_ids:
                 summary_lines = vendor_summary_lines.filtered(
                     lambda summary: not summary.warehouse_group_id
@@ -1348,10 +1376,57 @@ class AdvanceReorderOrderProcess(models.Model):
                     summary_lines=summary_lines,
                 )
                 processed_summaries |= summary_lines
+        return processed_summaries
 
+    def action_create_reorder_purchase_order(self, order_action='purchase'):
+        """Create purchase/subcontract orders from matching summary lines."""
+        self.ensure_one()
+        is_subcontracting = order_action == 'subcontracting'
+        if is_subcontracting:
+            if self.is_subcontracting_created:
+                raise UserError(_(
+                    'Subcontracting orders have already been created for this reorder process.'
+                ))
+            empty_msg = _('No summary lines are set to Subcontracting.')
+        else:
+            if self.is_purchase_action_done:
+                raise UserError(_(
+                    'Purchase orders have already been created for this reorder process.'
+                ))
+            empty_msg = _('No summary lines are set to Generate Purchase Orders.')
+
+        summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == order_action and not summary.is_action_done
+        )
+        if not summaries:
+            raise UserError(empty_msg)
+
+        if is_subcontracting:
+            processed_summaries = self._create_purchase_orders_from_vendor_mapping(
+                summaries, order_action='subcontracting'
+            )
+            if not processed_summaries:
+                raise UserError(_(
+                    'No subcontracting orders were created. Check subcontract BOM subcontractors '
+                    'and warehouse configuration for subcontracting summary products.'
+                ))
+            self._mark_summary_lines_done(processed_summaries)
+            self._update_state_after_order_creation()
+            return True
+
+        if self.vendor_selection_strategy in ('on_po_creation', 'without_vendor'):
+            return self.action_open_po_vendor_wizard()
+
+        processed_summaries = self._create_purchase_orders_from_vendor_mapping(
+            summaries, order_action='purchase'
+        )
         self._mark_summary_lines_done(processed_summaries)
         self._update_state_after_order_creation()
         return True
+
+    def action_create_reorder_subcontracting(self):
+        """Create subcontract POs using the shared purchase-order creation flow."""
+        return self.action_create_reorder_purchase_order(order_action='subcontracting')
 
     def _prepare_purchase_order_line_vals(self, fpos, warehouse_group_id, partner=None, summary_lines=None):
         """Override to handle summary lines that have no matching reorder line.
@@ -1655,71 +1730,22 @@ class AdvanceReorderOrderProcess(models.Model):
 
         return mo_vals_list
 
-    def action_create_reorder_subcontracting(self):
-        """Create subcontract POs using each product's subcontract BOM subcontractor."""
+    def action_open_po_vendor_wizard(self):
+        """Open vendor wizard for purchase summaries (On PO Creation)."""
         self.ensure_one()
-        subcontract_summaries = self.summary_ids.filtered(
-            lambda summary: summary.order_action == 'subcontracting' and not summary.is_action_done
-        )
-        if not subcontract_summaries:
-            raise UserError(_('No summary lines are set to Subcontracting.'))
-
-        vendor_product_dict = self.get_subcontracting_vendor_product_mapping_dict(
-            subcontract_summaries
-        )
-        processed_summaries = self.env['advance.reorder.orderprocess.summary']
-        for vendor_id, product_list in vendor_product_dict.items():
-            partner = self.env['res.partner'].browse(vendor_id)
-            vendor_summary_lines = subcontract_summaries.filtered(
-                lambda summary, products=product_list: summary.product_id.id in products
-            )
-            for config_id in self.config_ids:
-                summary_lines = vendor_summary_lines.filtered(
-                    lambda summary: not summary.warehouse_group_id
-                    or summary.warehouse_group_id == config_id.warehouse_group_id
-                )
-                if not summary_lines:
-                    continue
-                self.create_purchase_order(
-                    config_id.default_warehouse_id,
-                    config_id.warehouse_group_id,
-                    partner=partner,
-                    summary_lines=summary_lines,
-                )
-                processed_summaries |= summary_lines
-
-        if not processed_summaries:
-            raise UserError(_(
-                'No subcontracting orders were created. Check subcontract BOM subcontractors '
-                'and warehouse configuration for subcontracting summary products.'
-            ))
-        self._mark_summary_lines_done(processed_summaries)
-        self._update_state_after_order_creation()
-        return True
-
-    def action_open_po_vendor_wizard(self, is_subcontracting=False):
-        """Open vendor/warehouse wizard for purchase or subcontracting summaries."""
-        self.ensure_one()
-        wizard = self.env['advance.reorder.po.vendor.wizard'].with_context(
-            default_is_subcontracting=is_subcontracting,
-        ).create({
+        wizard = self.env['advance.reorder.po.vendor.wizard'].create({
             'reorder_process_id': self.id,
             'company_id': self.company_id.id,
-            'is_subcontracting': is_subcontracting,
+            'is_subcontracting': False,
         })
-        wizard_name = (
-            _('Select vendors for subcontracting')
-            if is_subcontracting
-            else _('Select vendors for purchase')
-        )
         return {
-            'name': wizard_name,
+            'name': _('Select vendors for purchase'),
             'type': 'ir.actions.act_window',
             'res_model': 'advance.reorder.po.vendor.wizard',
             'view_mode': 'form',
             'res_id': wizard.id,
             'target': 'new',
-            'context': dict(self.env.context, default_is_subcontracting=is_subcontracting),
+            'context': dict(self.env.context),
         }
 
     def action_production_count(self):

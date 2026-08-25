@@ -30,6 +30,8 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
     )
     show_vendor_selection = fields.Boolean(
         compute='_compute_show_vendor_selection',
+        store=True,
+        string='Show Vendor Selection',
     )
     is_subcontracting = fields.Boolean(
         string='Is Subcontracting',
@@ -40,20 +42,22 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
     @api.depends(
         'product_wise_reorder_id',
         'product_wise_reorder_id.vendor_selection_strategy',
-        'reorder_process_id',
         'is_subcontracting',
     )
     def _compute_show_vendor_selection(self):
-        """Show vendor fields based on product-wise strategy; hide for subcontracting."""
+        """Show vendor fields for purchase On PO Creation only (not subcontracting)."""
         for rec in self:
             if rec.is_subcontracting:
                 rec.show_vendor_selection = False
             elif rec.product_wise_reorder_id:
-                rec.show_vendor_selection = rec.product_wise_reorder_id.vendor_selection_strategy in (
-                    'on_po_creation',
-                    'without_vendor',
+                rec.show_vendor_selection = (
+                    rec.product_wise_reorder_id.vendor_selection_strategy in (
+                        'on_po_creation',
+                        'without_vendor',
+                    )
                 )
             else:
+                # Warehouse reorder purchase wizard is only opened for On PO Creation.
                 rec.show_vendor_selection = True
 
     def _get_order_action(self):
@@ -124,22 +128,16 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         return self._action_confirm_reorder_process()
 
     def _action_confirm_reorder_process(self):
-        """Create POs for reorder-with-real-demand; mark done only when all actions are done."""
+        """Create purchase orders from wizard-selected vendors (warehouse reorder)."""
         self.ensure_one()
         reorder = self.reorder_process_id
         if not reorder:
             raise UserError(_('No reorder found to create purchase orders.'))
-        if self.is_subcontracting:
-            reorder.action_create_reorder_subcontracting()
-            return {'type': 'ir.actions.act_window_close'}
-
-        order_action = self._get_order_action()
-        action_label = self._get_action_label()
         pending_summaries = reorder.summary_ids.filtered(
-            lambda summary: summary.order_action == order_action and not summary.is_action_done
+            lambda summary: summary.order_action == 'purchase' and not summary.is_action_done
         )
         if not pending_summaries:
-            raise UserError(_('There are no summary lines for %s.') % action_label)
+            raise UserError(_('There are no summary lines for Purchase Orders.'))
         if reorder.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this reorder process.'
@@ -149,6 +147,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                 raise UserError(
                     _('Please select a vendor for product %s.') % (line.product_id.display_name,)
                 )
+
         po_before = len(reorder.purchase_ids)
         processed_summaries = self.env['advance.reorder.orderprocess.summary']
         for config in reorder.config_ids:
@@ -169,11 +168,11 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                         default_wh, wh_group, partner=vendor, summary_lines=summaries
                     )
                     processed_summaries |= summaries
+
         if len(reorder.purchase_ids) == po_before:
             raise UserError(_(
                 'No purchase orders were created. Check that products have demand for the '
-                'configured warehouse groups and that the selected vendors have supplier '
-                'pricelist lines on those products.'
+                'configured warehouse groups and that the selected vendors are valid.'
             ))
         reorder._mark_summary_lines_done(processed_summaries)
         reorder._update_state_after_order_creation()
@@ -188,18 +187,22 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         real_demand = self.product_wise_reorder_id
         if real_demand.state != 'verified':
             raise UserError(_(
-                'Purchase orders can only be created from a verified product-wise demand.'
+                'Orders can only be created from a verified product-wise demand.'
             ))
-        if self.is_subcontracting:
-            real_demand.create_subcontracting_orders_for_warehouse(self.warehouse_id)
-            return {'type': 'ir.actions.act_window_close'}
 
         order_action = self._get_order_action()
         action_label = self._get_action_label()
-        if real_demand.is_purchase_action_done:
+
+        if self.is_subcontracting:
+            if real_demand.is_subcontracting_created:
+                raise UserError(_(
+                    'Subcontracting orders have already been created for this product-wise demand.'
+                ))
+        elif real_demand.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this product-wise demand.'
             ))
+
         pending_summaries = real_demand.summary_ids.filtered(
             lambda summary: summary.order_action == order_action and not summary.is_action_done
         )
@@ -231,13 +234,15 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             if len(real_demand.purchase_ids) == po_before:
                 raise UserError(_(
                     'No purchase orders were created. Check that products have demand and that '
-                    'the selected vendors have supplier pricelist lines on those products.'
+                    'the selected vendors are valid.'
                 ))
             real_demand._mark_summary_lines_done(processed_summaries)
             real_demand._update_state_after_order_creation()
             return {'type': 'ir.actions.act_window_close'}
 
-        real_demand.create_purchase_orders_for_warehouse(self.warehouse_id)
+        real_demand.create_purchase_orders_for_warehouse(
+            self.warehouse_id, order_action=order_action
+        )
         return {'type': 'ir.actions.act_window_close'}
 
 
