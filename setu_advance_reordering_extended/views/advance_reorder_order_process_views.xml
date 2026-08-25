@@ -32,17 +32,23 @@
                        invisible="generate_demand_with == 'forecast_sales'"/>
                 <field name="has_purchase_action_summary" invisible="1"/>
                 <field name="has_production_action_summary" invisible="1"/>
+                <field name="has_subcontracting_action_summary" invisible="1"/>
+                <field name="is_purchase_action_done" invisible="1"/>
+                <field name="is_subcontracting_created" invisible="1"/>
                 <field name="show_subcontracting_qty" invisible="1"/>
                 <field name="show_scrap_qty" invisible="1"/>
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="attributes">
-                <attribute name="invisible">state != 'verified' or not has_purchase_action_summary or purchase_count > 0</attribute>
+                <attribute name="invisible">state != 'verified' or not has_purchase_action_summary or is_purchase_action_done</attribute>
             </xpath>
 
             <xpath expr="//header/button[@name='action_create_reorder_purchase_order']" position="after">
                 <button name="action_create_reorder_manufacturing_orders" string="Create MO" type="object"
                         invisible="state != 'verified' or not has_production_action_summary or production_count > 0"
+                        class="btn-primary"/>
+                <button name="action_create_reorder_subcontracting" string="Create Subcontract" type="object"
+                        invisible="state != 'verified' or not has_subcontracting_action_summary or is_subcontracting_created"
                         class="btn-primary"/>
             </xpath>
 
@@ -248,7 +254,9 @@
                         <field name="total_volume" readonly="1"/>
                         <field name="volume_uom_name" string="Volume UOM" readonly="1"/>
                         <field name="is_order_moq" column_invisible="True" readonly="1"/>
-                        <field name="order_action" readonly="parent.state in ('done', 'cancel')"/>
+                        <field name="is_action_done" column_invisible="True"/>
+                        <field name="order_action"
+                               readonly="is_action_done or parent.state in ('done', 'cancel')"/>
                     </list>
                 </field>
             </xpath>

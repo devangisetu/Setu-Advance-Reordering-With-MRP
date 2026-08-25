@@ -66,10 +66,13 @@
                             invisible="state != 'inprogress'"/>
                     <button name="action_create_reorder_purchase_order" type="object" string="Create PO"
                             class="btn-primary"
-                            invisible="state != 'verified' or not has_purchase_action_summary or purchase_count > 0"/>
+                            invisible="state != 'verified' or not has_purchase_action_summary or is_purchase_action_done"/>
                     <button name="action_create_reorder_manufacturing_orders" type="object" string="Create MO"
                             class="btn-primary"
                             invisible="state != 'verified' or not has_production_action_summary or production_count > 0"/>
+                    <button name="action_create_reorder_subcontracting" type="object" string="Create Subcontract"
+                            class="btn-primary"
+                            invisible="state != 'verified' or not has_subcontracting_action_summary or is_subcontracting_created"/>
                     <button name="action_reorder_cancel" type="object" string="Cancel"
                             confirm="Are you sure want to cancel product-wise reorder ?"
                             invisible="state in ['verified', 'approved', 'done', 'no_data', 'cancel']"/>
@@ -88,6 +91,9 @@
                         <field name="replenishment_count" invisible="1"/>
                         <field name="has_purchase_action_summary" invisible="1"/>
                         <field name="has_production_action_summary" invisible="1"/>
+                        <field name="has_subcontracting_action_summary" invisible="1"/>
+                        <field name="is_purchase_action_done" invisible="1"/>
+                        <field name="is_subcontracting_created" invisible="1"/>
                         <field name="fg_count" invisible="1"/>
                         <field name="sfg_count" invisible="1"/>
                         <field name="component_count" invisible="1"/>
@@ -297,7 +303,9 @@
                                     <field name="uom_po_id" readonly="1"/>
                                     <field name="total_volume" readonly="1"/>
                                     <field name="is_order_moq" column_invisible="True" readonly="1"/>
-                                    <field name="order_action" readonly="parent.state in ('done', 'cancel')"/>
+                                    <field name="is_action_done" column_invisible="True"/>
+                                    <field name="order_action"
+                                           readonly="is_action_done or parent.state in ('done', 'cancel')"/>
                                 </list>
                             </field>
                         </page>

@@ -183,6 +183,18 @@ class AdvanceReorderProductRealDemand(models.Model):
         string='Has Production Action',
         compute='_compute_summary_action_flags',
     )
+    has_subcontracting_action_summary = fields.Boolean(
+        string='Has Subcontracting Action',
+        compute='_compute_summary_action_flags',
+    )
+    is_subcontracting_created = fields.Boolean(
+        string='Subcontracting Orders Created',
+        compute='_compute_action_done_flags',
+    )
+    is_purchase_action_done = fields.Boolean(
+        string='Purchase Action Done',
+        compute='_compute_action_done_flags',
+    )
     fg_count = fields.Integer(compute='_compute_fg_count')
     sfg_count = fields.Integer(compute='_compute_sfg_count')
     component_count = fields.Integer(compute='_compute_component_count')
@@ -398,22 +410,51 @@ class AdvanceReorderProductRealDemand(models.Model):
 
     @api.depends('summary_ids', 'summary_ids.order_action')
     def _compute_summary_action_flags(self):
-        """Flag whether summary has purchase or production actions."""
+        """Flag whether summary has purchase/production/subcontract actions."""
         for record in self:
             actions = set(record.summary_ids.mapped('order_action'))
             record.has_purchase_action_summary = 'purchase' in actions
             record.has_production_action_summary = 'production' in actions
+            record.has_subcontracting_action_summary = 'subcontracting' in actions
+
+    @api.depends(
+        'summary_ids',
+        'summary_ids.order_action',
+        'summary_ids.is_action_done',
+    )
+    def _compute_action_done_flags(self):
+        """Track whether all purchase/subcontracting summary lines are marked done."""
+        for record in self:
+            purchase_summaries = record.summary_ids.filtered(
+                lambda summary: summary.order_action == 'purchase'
+            )
+            record.is_purchase_action_done = bool(purchase_summaries) and all(
+                purchase_summaries.mapped('is_action_done')
+            )
+            subcontract_summaries = record.summary_ids.filtered(
+                lambda summary: summary.order_action == 'subcontracting'
+            )
+            record.is_subcontracting_created = bool(subcontract_summaries) and all(
+                subcontract_summaries.mapped('is_action_done')
+            )
 
     def _are_all_order_actions_done(self):
         """Return True when every required summary action has been generated."""
         self.ensure_one()
-        actions = set(self.summary_ids.mapped('order_action'))
-        purchase_done = bool(self.purchase_ids) if 'purchase' in actions else True
-        production_done = bool(self.production_ids) if 'production' in actions else True
-        return purchase_done and production_done
+        for action in ('purchase', 'production', 'subcontracting'):
+            action_lines = self.summary_ids.filtered(lambda summary: summary.order_action == action)
+            if action_lines and not all(action_lines.mapped('is_action_done')):
+                return False
+        return True
+
+    def _mark_summary_lines_done(self, summaries):
+        """Mark summary lines as done after their documents are created."""
+        summaries = summaries.filtered(lambda summary: not summary.is_action_done)
+        if summaries:
+            summaries.write({'is_action_done': True})
 
     def _update_state_after_order_creation(self):
-        """Mark process done only when all required PO/MO actions are complete."""
+        """Mark process done only when all required order actions are complete."""
         for record in self:
             if record.state == 'verified' and record._are_all_order_actions_done():
                 record.write({'state': 'done'})
@@ -438,6 +479,47 @@ class AdvanceReorderProductRealDemand(models.Model):
                 or product.get_default_bom(company_id=self.company_id.id)
                 or self.env['mrp.bom']
         )
+
+
+    def _get_subcontract_partner_for_product(self, product):
+        """Return the BOM subcontractor to use for a subcontract purchase order."""
+        self.ensure_one()
+        bom = product.reorder_bom_id
+        if not bom or (bom and bom.type != 'subcontract'):
+            bom = product.bom_ids.filtered(
+                lambda bom: bom.type == 'subcontract' and bom.company_id == self.company_id
+            )[:1]
+        if not bom or not bom.subcontractor_ids:
+            return self.env['res.partner']
+        seller = product.with_company(self.company_id)._select_seller(
+            quantity=None,
+            params={'subcontractor_ids': bom.subcontractor_ids},
+        )
+        if seller and seller.partner_id:
+            return seller.partner_id
+        return bom.subcontractor_ids[:1]
+
+    def get_subcontracting_vendor_product_mapping_dict(self, subcontract_summaries):
+        """Group subcontract summary products by the subcontractor set on their BOM."""
+        self.ensure_one()
+        vendor_product_dict = {}
+        products_without_subcontractor = self.env['product.product']
+        for product in subcontract_summaries.mapped('product_id'):
+            partner = self._get_subcontract_partner_for_product(product)
+            if not partner:
+                products_without_subcontractor |= product
+                continue
+            vendor_product_dict.setdefault(partner.id, []).append(product.id)
+        if products_without_subcontractor:
+            raise UserError(_(
+                'No subcontracting BOM with a subcontractor found for the following '
+                'product(s):\n%(products)s',
+                products='\n'.join(
+                    '- %s' % product.display_name
+                    for product in products_without_subcontractor
+                ),
+            ))
+        return vendor_product_dict
 
     def _get_purchase_lead_days(self, product):
         """Average purchase lead days from done receipt moves."""
@@ -1286,7 +1368,12 @@ class AdvanceReorderProductRealDemand(models.Model):
         )
 
     def _get_order_action(self, product):
-        """Decide purchase or production action for product."""
+        """Decide summary action from product storable flag, routes and classification.
+
+        Non-storable products get None; otherwise purchase or production.
+        """
+        if not product or not product.is_storable:
+            return 'none'
         route_names = set(product.route_ids.mapped('name'))
         if {'Manufacture', 'Replenish on Order (MTO)'} <= route_names:
             return 'production'
@@ -1295,6 +1382,7 @@ class AdvanceReorderProductRealDemand(models.Model):
         if product.reorder_product_classification in ('finished_good', 'semi_finished_good'):
             return 'production'
         return 'purchase'
+
 
     def _get_summary_vals_by_product(self, summary_vals):
         """Index pending summary vals by product id."""
@@ -1356,14 +1444,15 @@ class AdvanceReorderProductRealDemand(models.Model):
             if order_qty <= 0:
                 continue
 
+            resolved_action = self._get_order_action(product)
             line_vals = self._prepare_net_demand_summary_line_vals(
                 product=product,
                 order_qty=order_qty,
                 demanded_qty=order_qty,
-                order_action=order_action,
+                order_action=resolved_action,
                 company_id=self.company_id,
             )
-            if order_action == 'purchase':
+            if resolved_action == 'purchase':
                 _vendor_moq, _purchase_qty, price = self._get_purchase_details(
                     product, self.company_id, order_qty, order_qty,
                 )
@@ -1653,17 +1742,20 @@ class AdvanceReorderProductRealDemand(models.Model):
     def action_create_reorder_purchase_order(self):
         """Open wizard to create purchase orders."""
         self.ensure_one()
-        if self.purchase_ids:
+        if self.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this product-wise demand.'
             ))
-        purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
+        purchase_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'purchase' and not summary.is_action_done
+        )
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
 
         wizard = self.env['advance.reorder.po.vendor.wizard'].create({
             'product_wise_reorder_id': self.id,
             'company_id': self.company_id.id,
+            'is_subcontracting': False,
         })
         wizard_name = _('Select vendors for purchase') if wizard.show_vendor_selection else _(
             'Select Warehouse To Create Purchase Order'
@@ -1687,16 +1779,19 @@ class AdvanceReorderProductRealDemand(models.Model):
             raise UserError(_(
                 'Purchase orders can only be created from a verified product-wise demand.'
             ))
-        if self.purchase_ids:
+        if self.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this product-wise demand.'
             ))
 
-        purchase_summaries = self.summary_ids.filtered(lambda summary: summary.order_action == 'purchase')
+        purchase_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'purchase' and not summary.is_action_done
+        )
         if not purchase_summaries:
             raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
 
         vendor_product_dict = self.get_vendor_product_mapping_dict(purchase_summaries)
+        processed_summaries = self.env['advance.reorder.product.wise.order.summary']
         for vendor_id, product_list in vendor_product_dict.items():
             partner = self.env['res.partner'].browse(vendor_id)
             summary_lines = purchase_summaries.filtered(
@@ -1716,7 +1811,9 @@ class AdvanceReorderProductRealDemand(models.Model):
                 partner=partner,
                 summary_lines=summary_lines,
             )
+            processed_summaries |= summary_lines
 
+        self._mark_summary_lines_done(processed_summaries)
         self._update_state_after_order_creation()
         return True
 
@@ -1749,7 +1846,11 @@ class AdvanceReorderProductRealDemand(models.Model):
                 'Manufacturing orders can only be created from a verified product-wise demand.'
             ))
         production_summaries = self.summary_ids.filtered(
-            lambda summary: summary.order_action == 'production' and summary.order_qty > 0
+            lambda summary: (
+                summary.order_action == 'production'
+                and summary.order_qty > 0
+                and not summary.is_action_done
+            )
         )
         if self.production_ids:
             raise UserError(_(
@@ -1764,6 +1865,82 @@ class AdvanceReorderProductRealDemand(models.Model):
             raise UserError(_('No manufacturing orders to create.'))
 
         Production.create(mo_vals_list)
+        self._mark_summary_lines_done(production_summaries)
+        self._update_state_after_order_creation()
+        return True
+
+    def action_create_reorder_subcontracting(self):
+        """Open wizard to create subcontract purchase orders."""
+        self.ensure_one()
+        if self.is_subcontracting_created:
+            raise UserError(_(
+                'Subcontracting orders have already been created for this product-wise demand.'
+            ))
+        subcontract_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'subcontracting' and not summary.is_action_done
+        )
+        if not subcontract_summaries:
+            raise UserError(_('No summary lines are set to Subcontracting.'))
+
+        wizard = self.env['advance.reorder.po.vendor.wizard'].with_context(
+            default_is_subcontracting=True,
+        ).create({
+            'product_wise_reorder_id': self.id,
+            'company_id': self.company_id.id,
+            'is_subcontracting': True,
+        })
+        wizard_name = (
+            _('Select vendors for subcontracting')
+            if wizard.show_vendor_selection
+            else _('Select Warehouse To Create Subcontract Order')
+        )
+        return {
+            'name': wizard_name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'advance.reorder.po.vendor.wizard',
+            'view_mode': 'form',
+            'res_id': wizard.id,
+            'target': 'new',
+            'context': dict(self.env.context, default_is_subcontracting=True),
+        }
+
+    def create_subcontracting_orders_for_warehouse(self, warehouse):
+        """Create subcontract purchase orders for selected warehouse."""
+        self.ensure_one()
+        if not warehouse:
+            raise UserError(_('Please select a warehouse to create subcontracting orders.'))
+        if self.state != 'verified':
+            raise UserError(_(
+                'Subcontracting orders can only be created from a verified product-wise demand.'
+            ))
+
+        subcontract_summaries = self.summary_ids.filtered(
+            lambda summary: summary.order_action == 'subcontracting' and not summary.is_action_done
+        )
+
+        vendor_product_dict = self.get_subcontracting_vendor_product_mapping_dict(
+            subcontract_summaries
+        )
+        processed_summaries = self.env['advance.reorder.product.wise.order.summary']
+        for vendor_id, product_list in vendor_product_dict.items():
+            partner = self.env['res.partner'].browse(vendor_id)
+            summary_lines = subcontract_summaries.filtered(
+                lambda summary, products=product_list: summary.product_id.id in products
+            )
+            if summary_lines:
+                self.create_purchase_order(
+                    warehouse,
+                    partner=partner,
+                    summary_lines=summary_lines,
+                )
+                processed_summaries |= summary_lines
+
+        if not processed_summaries:
+            raise UserError(_(
+                'No subcontracting orders were created. Check subcontract BOM subcontractors '
+                'for subcontracting summary products.'
+            ))
+        self._mark_summary_lines_done(processed_summaries)
         self._update_state_after_order_creation()
         return True
 

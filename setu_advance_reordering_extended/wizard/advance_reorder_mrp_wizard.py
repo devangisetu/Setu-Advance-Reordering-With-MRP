@@ -71,11 +71,11 @@ class ManufacturingOrderWizard(models.TransientModel):
             production_summaries = self.env['advance.reorder.orderprocess.summary']
             if rec.reorder_process_id:
                 production_summaries = rec.reorder_process_id.summary_ids.filtered(
-                    lambda summary: summary.order_action == 'production')
+                    lambda summary: summary.order_action == 'production' and not summary.is_action_done)
                 rec.company_id = rec.reorder_process_id.company_id
             elif rec.product_wise_reorder_id:
                 production_summaries = rec.product_wise_reorder_id.summary_ids.filtered(
-                    lambda summary: summary.order_action == 'production')
+                    lambda summary: summary.order_action == 'production' and not summary.is_action_done)
                 rec.company_id = rec.product_wise_reorder_id.company_id
             else:
                 continue

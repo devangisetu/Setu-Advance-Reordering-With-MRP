@@ -27,19 +27,27 @@ class AdvanceReorderProductRealDemandSummary(models.Model):
     product_weight = fields.Float(related='product_id.weight', string='Weight')
     order_action = fields.Selection(
         selection=[
+            ('none', 'None'),
             ('purchase', 'Generate Purchase Orders'),
             ('production', 'Generate Production Orders'),
-            ('ict', 'Generate ICT'),
-            ('iwt', 'Generate IWT'),
             ('subcontracting', 'Subcontracting'),
         ],
         string='Action',
-        default='purchase',
+        default='none',
+        help='Defines which document type will be generated for this summary line. '
+             'Auto-set from product tracking and routes on verify and can be changed before processing. '
+             'Products without lot/serial tracking default to None.',
     )
     is_order_moq = fields.Boolean(
         string='Is Order MOQ?',
         compute='_compute_is_order_moq',
         store=True,
+    )
+    is_action_done = fields.Boolean(
+        string='Action Done',
+        default=False,
+        copy=False,
+        help='Set to True when the document for this summary action has been created.',
     )
 
     @api.depends('vendor_moq', 'demanded_qty')

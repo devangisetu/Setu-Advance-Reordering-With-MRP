@@ -31,16 +31,24 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
     show_vendor_selection = fields.Boolean(
         compute='_compute_show_vendor_selection',
     )
+    is_subcontracting = fields.Boolean(
+        string='Is Subcontracting',
+        default=False,
+        help='True when this wizard creates subcontracting orders instead of purchase orders.',
+    )
 
     @api.depends(
         'product_wise_reorder_id',
         'product_wise_reorder_id.vendor_selection_strategy',
         'reorder_process_id',
+        'is_subcontracting',
     )
     def _compute_show_vendor_selection(self):
-        """Show vendor fields based on product-wise strategy."""
+        """Show vendor fields based on product-wise strategy; hide for subcontracting."""
         for rec in self:
-            if rec.product_wise_reorder_id:
+            if rec.is_subcontracting:
+                rec.show_vendor_selection = False
+            elif rec.product_wise_reorder_id:
                 rec.show_vendor_selection = rec.product_wise_reorder_id.vendor_selection_strategy in (
                     'on_po_creation',
                     'without_vendor',
@@ -48,18 +56,40 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             else:
                 rec.show_vendor_selection = True
 
+    def _get_order_action(self):
+        """Return summary order_action value for this wizard mode."""
+        self.ensure_one()
+        return 'subcontracting' if self.is_subcontracting else 'purchase'
+
+    def _get_action_label(self):
+        """Human-readable label for the current wizard mode."""
+        self.ensure_one()
+        return _('Subcontracting') if self.is_subcontracting else _('Purchase Orders')
+
     @api.model_create_multi
     def create(self, vals_list):
-        """Create wizard and preload purchase summary lines."""
+        """Create wizard and preload purchase/subcontracting summary lines."""
+        for vals in vals_list:
+            if 'is_subcontracting' not in vals:
+                vals['is_subcontracting'] = bool(
+                    self.env.context.get('default_is_subcontracting')
+                    or self.env.context.get('is_subcontracting')
+                )
         records = super().create(vals_list)
         for rec in records:
+            order_action = rec._get_order_action()
+            action_label = rec._get_action_label()
             if rec.product_wise_reorder_id:
                 rec.company_id = rec.product_wise_reorder_id.company_id
                 purchase_summaries = rec.product_wise_reorder_id.summary_ids.filtered(
-                    lambda summary: summary.order_action == 'purchase'
+                    lambda summary, action=order_action: (
+                        summary.order_action == action and not summary.is_action_done
+                    )
                 )
                 if not purchase_summaries:
-                    raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+                    raise UserError(_(
+                        'No summary lines are set to %s.'
+                    ) % action_label)
                 if not rec.line_ids:
                     rec.line_ids = [
                         (0, 0, {'product_wise_summary_line_id': summary.id})
@@ -69,10 +99,14 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             if not rec.reorder_process_id:
                 continue
             purchase_summaries = rec.reorder_process_id.summary_ids.filtered(
-                lambda summary: summary.order_action == 'purchase'
+                lambda summary, action=order_action: (
+                    summary.order_action == action and not summary.is_action_done
+                )
             )
             if not purchase_summaries:
-                raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+                raise UserError(_(
+                    'No summary lines are set to %s.'
+                ) % action_label)
             rec.line_ids.filtered(
                 lambda line: line.summary_line_id not in purchase_summaries
             ).unlink()
@@ -83,7 +117,7 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         return records
 
     def action_confirm(self):
-        """Confirm wizard and create purchase orders."""
+        """Confirm wizard and create purchase/subcontracting orders."""
         self.ensure_one()
         if self.product_wise_reorder_id:
             return self._action_confirm_product_wise_reorder_process()
@@ -95,9 +129,18 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
         reorder = self.reorder_process_id
         if not reorder:
             raise UserError(_('No reorder found to create purchase orders.'))
-        if not reorder.summary_ids.filtered(lambda summary: summary.order_action == 'purchase'):
-            raise UserError(_('There are no summary lines to purchase.'))
-        if reorder.purchase_ids:
+        if self.is_subcontracting:
+            reorder.action_create_reorder_subcontracting()
+            return {'type': 'ir.actions.act_window_close'}
+
+        order_action = self._get_order_action()
+        action_label = self._get_action_label()
+        pending_summaries = reorder.summary_ids.filtered(
+            lambda summary: summary.order_action == order_action and not summary.is_action_done
+        )
+        if not pending_summaries:
+            raise UserError(_('There are no summary lines for %s.') % action_label)
+        if reorder.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this reorder process.'
             ))
@@ -107,13 +150,14 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                     _('Please select a vendor for product %s.') % (line.product_id.display_name,)
                 )
         po_before = len(reorder.purchase_ids)
+        processed_summaries = self.env['advance.reorder.orderprocess.summary']
         for config in reorder.config_ids:
             default_wh = config.default_warehouse_id
             wh_group = config.warehouse_group_id
             vendor_to_summary_ids = defaultdict(list)
             for wline in self.line_ids:
                 summary = wline.summary_line_id
-                if not summary or not wline.vendor_id:
+                if not summary or not wline.vendor_id or summary.is_action_done:
                     continue
                 if summary.warehouse_group_id and summary.warehouse_group_id != wh_group:
                     continue
@@ -124,12 +168,14 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                     reorder.create_purchase_order(
                         default_wh, wh_group, partner=vendor, summary_lines=summaries
                     )
+                    processed_summaries |= summaries
         if len(reorder.purchase_ids) == po_before:
             raise UserError(_(
                 'No purchase orders were created. Check that products have demand for the '
                 'configured warehouse groups and that the selected vendors have supplier '
                 'pricelist lines on those products.'
             ))
+        reorder._mark_summary_lines_done(processed_summaries)
         reorder._update_state_after_order_creation()
         return {'type': 'ir.actions.act_window_close'}
 
@@ -144,12 +190,21 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
             raise UserError(_(
                 'Purchase orders can only be created from a verified product-wise demand.'
             ))
-        if real_demand.purchase_ids:
+        if self.is_subcontracting:
+            real_demand.create_subcontracting_orders_for_warehouse(self.warehouse_id)
+            return {'type': 'ir.actions.act_window_close'}
+
+        order_action = self._get_order_action()
+        action_label = self._get_action_label()
+        if real_demand.is_purchase_action_done:
             raise UserError(_(
                 'Purchase orders have already been created for this product-wise demand.'
             ))
-        if not real_demand.summary_ids.filtered(lambda summary: summary.order_action == 'purchase'):
-            raise UserError(_('No summary lines are set to Generate Purchase Orders.'))
+        pending_summaries = real_demand.summary_ids.filtered(
+            lambda summary: summary.order_action == order_action and not summary.is_action_done
+        )
+        if not pending_summaries:
+            raise UserError(_('No summary lines are set to %s.') % action_label)
 
         if self.show_vendor_selection:
             for line in self.line_ids:
@@ -158,12 +213,12 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                         _('Please select a vendor for product %s.') % (line.product_id.display_name,)
                     )
             po_before = len(real_demand.purchase_ids)
+            processed_summaries = self.env['advance.reorder.product.wise.order.summary']
             vendor_to_summary_ids = defaultdict(list)
             for wizard_line in self.line_ids:
-                if wizard_line.product_wise_summary_line_id:
-                    vendor_to_summary_ids[wizard_line.vendor_id].append(
-                        wizard_line.product_wise_summary_line_id.id
-                    )
+                summary = wizard_line.product_wise_summary_line_id
+                if summary and not summary.is_action_done:
+                    vendor_to_summary_ids[wizard_line.vendor_id].append(summary.id)
             for vendor, summary_ids in vendor_to_summary_ids.items():
                 summaries = self.env['advance.reorder.product.wise.order.summary'].browse(summary_ids)
                 if summaries:
@@ -172,11 +227,13 @@ class AdvanceReorderPoVendorWizard(models.TransientModel):
                         partner=vendor,
                         summary_lines=summaries,
                     )
+                    processed_summaries |= summaries
             if len(real_demand.purchase_ids) == po_before:
                 raise UserError(_(
                     'No purchase orders were created. Check that products have demand and that '
                     'the selected vendors have supplier pricelist lines on those products.'
                 ))
+            real_demand._mark_summary_lines_done(processed_summaries)
             real_demand._update_state_after_order_creation()
             return {'type': 'ir.actions.act_window_close'}
 

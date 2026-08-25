@@ -8,6 +8,7 @@
             <xpath expr="//field[@name='reorder_process_id']" position="before">
                 <field name="company_id" invisible="1"/>
                 <field name="show_vendor_selection" invisible="1"/>
+                <field name="is_subcontracting" invisible="1"/>
             </xpath>
             <xpath expr="//field[@name='reorder_process_id']" position="attributes">
                 <attribute name="invisible">not reorder_process_id</attribute>
